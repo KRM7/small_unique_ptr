@@ -1,0 +1,35 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<RuleSet Name="Rules for GeneticAlgorithm" Description="Code analysis rules for GeneticAlgorithm.vcxproj." ToolsVersion="17.0">
+  <Include Path="cppcorecheckarithmeticrules.ruleset" Action="Default" />
+  <Include Path="cppcorecheckboundsrules.ruleset" Action="Default" />
+  <Include Path="cppcorecheckclassrules.ruleset" Action="Default" />
+  <Include Path="cppcorecheckconcurrencyrules.ruleset" Action="Default" />
+  <Include Path="cppcorecheckconstrules.ruleset" Action="Default" />
+  <Include Path="cppcorecheckdeclrules.ruleset" Action="Default" />
+  <Include Path="cppcorecheckenumrules.ruleset" Action="Default" />
+  <Include Path="cppcorecheckfuncrules.ruleset" Action="Default" />
+  <Include Path="cppcorecheckownerpointerrules.ruleset" Action="Default" />
+  <Include Path="cppcorecheckrawpointerrules.ruleset" Action="Default" />
+  <Include Path="cppcorechecksharedpointerrules.ruleset" Action="Default" />
+  <Include Path="cppcorecheckstlrules.ruleset" Action="Default" />
+  <Include Path="cppcorecheckstylerules.ruleset" Action="Default" />
+  <Include Path="cppcorechecktyperules.ruleset" Action="Default" />
+  <Include Path="cppcorecheckuniquepointerrules.ruleset" Action="Default" />
+  <Rules AnalyzerId="Microsoft.Analyzers.NativeCodeAnalysis" RuleNamespace="Microsoft.Rules.Native">
+	<!-- Disable rules that recommend using non-std functions. -->
+    <Rule Id="C26429" Action="None" /> <!-- Use gsl::not_null<T>. -->
+	<Rule Id="C26472" Action="None" /> <!-- Don't use a static_cast for arithmetic conversions. -->
+	<Rule Id="C26446" Action="None" /> <!-- Prefer to use gsl::at() instead of unchecked subscript operator. -->
+
+	<!-- Disable rules that are too noisy/not helpful. -->	  
+    <Rule Id="C26493" Action="None" /> <!-- Don't use C-style casts. -->
+    <Rule Id="C26496" Action="None" /> <!-- The variable 'xyz' is assigned only once, mark it as const. -->
+	<Rule Id="C26814" Action="None" /> <!-- The const variable 'xyz' can be computed at compile time. Use constexpr. -->
+    <Rule Id="C26812" Action="None" /> <!-- Prefer 'enum class' over 'enum'. -->
+	<Rule Id="C26455" Action="None" /> <!-- Default constructor should not throw. Declare it 'noexcept'. -->
+
+	<!-- Enable useful rules that are off by default. -->
+    <Rule Id="C26815" Action="Warning" /> <!-- The pointer is dangling because it points at a temporary instance that was destroyed. -->
+    <Rule Id="C26822" Action="Warning" /> <!-- Dereferencing a null pointer. -->
+  </Rules>
+</RuleSet>

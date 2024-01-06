@@ -1,0 +1,12 @@
+# VSCode
+.vscode/
+
+# Visual Studio
+.vs/
+*.hint
+
+# Build results
+out/
+build/*
+!build/*.sh
+*.exe
