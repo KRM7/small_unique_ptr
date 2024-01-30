@@ -457,12 +457,3 @@ TEST_CASE("const_unique_ptr", "[small_unique_ptr]")
 
     REQUIRE(*p == 2);
 }
-
-TEST_CASE("noexcept_construct", "[small_unique_ptr]")
-{
-    STATIC_REQUIRE(noexcept(make_unique_small<SmallPOD>()));
-    STATIC_REQUIRE(!noexcept(make_unique_small<LargePOD>()));
-
-    STATIC_REQUIRE(noexcept(make_unique_small<SmallDerived>()));
-    STATIC_REQUIRE(!noexcept(make_unique_small<LargeDerived>()));
-}

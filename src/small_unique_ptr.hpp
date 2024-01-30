@@ -119,7 +119,7 @@ namespace detail
         constexpr bool is_stack_allocated() const noexcept { return static_cast<bool>(this->move_); }
 
         alignas(buffer_alignment_v<T>)
-        mutable buffer_t buffer_;
+        mutable buffer_t buffer_ = {};
         T* data_      = nullptr;
         move_fn move_ = nullptr;
     };
@@ -153,7 +153,7 @@ namespace detail
         constexpr bool is_stack_allocated() const noexcept { return !std::is_constant_evaluated() && (data_ == buffer()); }
 
         alignas(buffer_alignment_v<T>)
-        mutable buffer_t buffer_;
+        mutable buffer_t buffer_ = {};
         T* data_ = nullptr;
     };
 
@@ -167,6 +167,7 @@ namespace detail
     };
 
 } // namespace detail
+
 
 template<typename T>
 class small_unique_ptr : private detail::small_unique_ptr_base<T>
@@ -299,7 +300,7 @@ public:
     [[nodiscard]]
     constexpr bool is_stack_allocated() const noexcept
     {
-        return small_unique_ptr_base::is_stack_allocated();
+        return small_unique_ptr::small_unique_ptr_base::is_stack_allocated();
     }
 
     [[nodiscard]]
@@ -357,13 +358,13 @@ public:
     }
 
 private:
-    template<typename B = T>
+    template<typename Base = T>
     constexpr std::ptrdiff_t offsetof_base() const noexcept
     {
         if (!is_stack_allocated()) return 0;
 
         const auto derived_ptr = reinterpret_cast<const volatile unsigned char*>(this->buffer());
-        const auto base_ptr    = reinterpret_cast<const volatile unsigned char*>(static_cast<const volatile B*>(this->data_));
+        const auto base_ptr    = reinterpret_cast<const volatile unsigned char*>(static_cast<const volatile Base*>(this->data_));
 
         return base_ptr - derived_ptr;
     }
@@ -372,8 +373,7 @@ private:
     friend class small_unique_ptr;
 
     template<typename U, typename... Args>
-    friend constexpr small_unique_ptr<U> make_unique_small(Args&&...)
-    noexcept(!detail::always_heap_allocated_v<U> && std::is_nothrow_constructible_v<U, Args...>);
+    friend constexpr small_unique_ptr<U> make_unique_small(Args&&...);
 };
 
 template<typename T>
@@ -397,7 +397,6 @@ namespace std
 
 template<typename T, typename... Args>
 [[nodiscard]] constexpr small_unique_ptr<T> make_unique_small(Args&&... args)
-noexcept(!detail::always_heap_allocated_v<T> && std::is_nothrow_constructible_v<T, Args...>)
 {
     small_unique_ptr<T> ptr;
 

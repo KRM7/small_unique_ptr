@@ -24,4 +24,7 @@ target_include_directories(small_unique_ptr SYSTEM INTERFACE "${CMAKE_CURRENT_SO
 target_compile_features(small_unique_ptr INTERFACE "cxx_std_20")
 target_compile_options(small_unique_ptr INTERFACE "$<$<CXX_COMPILER_ID:MSVC>:-Zc:preprocessor>" "$<$<CXX_COMPILER_ID:MSVC>:-Zc:__cplusplus>")
 
+include(CTest)
+
+enable_testing()
 add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/test")
