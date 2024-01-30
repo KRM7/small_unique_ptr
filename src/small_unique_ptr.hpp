@@ -1,10 +1,12 @@
 /* Copyright (c) 2024 Krisztián Rugási. Subject to the MIT License. */
 
-#ifndef SMALL_UNIQUE_PTR_SMALL_UNIQUE_PTR_HPP
-#define SMALL_UNIQUE_PTR_SMALL_UNIQUE_PTR_HPP
+#ifndef SMALL_UNIQUE_PTR_HPP
+#define SMALL_UNIQUE_PTR_HPP
 
 #include <compare>
 #include <memory>
+#include <iosfwd>
+#include <functional>
 #include <new>
 #include <type_traits>
 #include <utility>
@@ -289,6 +291,18 @@ public:
     }
 
     [[nodiscard]]
+    constexpr static bool is_always_heap_allocated() noexcept
+    {
+        return detail::always_heap_allocated_v<T>;
+    }
+
+    [[nodiscard]]
+    constexpr bool is_stack_allocated() const noexcept
+    {
+        return small_unique_ptr_base::is_stack_allocated();
+    }
+
+    [[nodiscard]]
     constexpr pointer get() const noexcept
     {
         return this->data_;
@@ -336,6 +350,12 @@ public:
         return this->data_ <=> rhs.data_;
     }
 
+    template<typename CharT, typename Traits>
+    friend std::basic_ostream<CharT, Traits>& operator<<(std::basic_ostream<CharT, Traits>& os, const small_unique_ptr& p)
+    {
+        return os << p.get();
+    }
+
 private:
     template<typename B = T>
     constexpr std::ptrdiff_t offsetof_base() const noexcept
@@ -362,6 +382,19 @@ constexpr void swap(small_unique_ptr<T>& lhs, small_unique_ptr<T>& rhs) noexcept
     lhs.swap(rhs);
 }
 
+namespace std
+{
+    template<typename T>
+    struct hash<small_unique_ptr<T>>
+    {
+        std::size_t operator()(const small_unique_ptr<T>& p) const noexcept
+        {
+            return std::hash<typename small_unique_ptr<T>::pointer>{}(p.get());
+        }
+    };
+
+} // namespace std
+
 template<typename T, typename... Args>
 [[nodiscard]] constexpr small_unique_ptr<T> make_unique_small(Args&&... args)
 noexcept(!detail::always_heap_allocated_v<T> && std::is_nothrow_constructible_v<T, Args...>)
@@ -385,4 +418,4 @@ noexcept(!detail::always_heap_allocated_v<T> && std::is_nothrow_constructible_v<
     return ptr;
 }
 
-#endif // !SMALL_UNIQUE_PTR_SMALL_UNIQUE_PTR_HPP
+#endif // !SMALL_UNIQUE_PTR_HPP

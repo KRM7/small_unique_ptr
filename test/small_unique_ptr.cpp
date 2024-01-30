@@ -71,6 +71,36 @@ TEST_CASE("construction", "[small_unique_ptr]")
     REQUIRE_NOTHROW(make_unique_small<LargePOD>());
 }
 
+TEST_CASE("is_always_heap_allocated", "[small_unique_ptr]")
+{
+    STATIC_REQUIRE(!small_unique_ptr<SmallDerived>::is_always_heap_allocated());
+    STATIC_REQUIRE(small_unique_ptr<LargeDerived>::is_always_heap_allocated());
+
+    STATIC_REQUIRE(!small_unique_ptr<SmallPOD>::is_always_heap_allocated());
+    STATIC_REQUIRE(small_unique_ptr<LargePOD>::is_always_heap_allocated());
+}
+
+TEST_CASE("is_stack_allocated", "[small_unique_ptr]")
+{
+    STATIC_REQUIRE( !std::invoke([]{ return make_unique_small<SmallDerived>().is_stack_allocated(); }) );
+    STATIC_REQUIRE( !std::invoke([]{ return make_unique_small<LargeDerived>().is_stack_allocated(); }) );
+
+    STATIC_REQUIRE( !std::invoke([]{ return make_unique_small<SmallPOD>().is_stack_allocated(); }) );
+    STATIC_REQUIRE( !std::invoke([]{ return make_unique_small<LargePOD>().is_stack_allocated(); }) );
+
+    small_unique_ptr<Base> p1 = make_unique_small<SmallDerived>();
+    small_unique_ptr<Base> p2 = make_unique_small<LargeDerived>();
+
+    REQUIRE(p1.is_stack_allocated());
+    REQUIRE(!p2.is_stack_allocated());
+
+    small_unique_ptr<SmallPOD> p3 = make_unique_small<SmallPOD>();
+    small_unique_ptr<LargePOD> p4 = make_unique_small<LargePOD>();
+
+    REQUIRE(p3.is_stack_allocated());
+    REQUIRE(!p4.is_stack_allocated());
+}
+
 TEST_CASE("comparisons", "[small_unique_ptr]")
 {
     STATIC_REQUIRE(small_unique_ptr<SmallPOD>(nullptr) == nullptr);
@@ -423,7 +453,6 @@ TEST_CASE("poly_alignment", "[small_unique_ptr]")
 TEST_CASE("const_unique_ptr", "[small_unique_ptr]")
 {
     const small_unique_ptr<int> p = make_unique_small<int>(3);
-
     *p = 2;
 
     REQUIRE(*p == 2);
