@@ -17,6 +17,13 @@ namespace detail
 
 
     template<typename T>
+    constexpr const T& min(const T& left, const T& right)
+    {
+        return (left < right) ? left : right;
+    }
+
+
+    template<typename T>
     struct is_nothrow_dereferenceable : std::bool_constant<noexcept(*std::declval<T>())> {};
 
     template<typename T>
@@ -40,10 +47,10 @@ namespace detail
     struct buffer_size
     {
     private:
-        inline static constexpr std::size_t dynamic_buffer_size = cache_line_size - sizeof(void*) - sizeof(void(*)());
-        inline static constexpr std::size_t static_buffer_size  = (sizeof(T) < dynamic_buffer_size) ? sizeof(T) : dynamic_buffer_size;
+        static constexpr std::size_t dynamic_buffer_size = cache_line_size - sizeof(void*) - sizeof(void(*)());
+        static constexpr std::size_t static_buffer_size  = detail::min(sizeof(T), cache_line_size - sizeof(void*));
     public:
-        inline static constexpr std::size_t value = std::has_virtual_destructor_v<T> ? dynamic_buffer_size : static_buffer_size;
+        static constexpr std::size_t value = std::has_virtual_destructor_v<T> ? dynamic_buffer_size : static_buffer_size;
     };
 
     template<typename T>
@@ -53,7 +60,11 @@ namespace detail
     template<typename T>
     struct buffer_alignment
     {
-        inline static constexpr std::size_t value = cache_line_size;
+    private:
+        static constexpr std::size_t dynamic_buffer_alignment = cache_line_size;
+        static constexpr std::size_t static_buffer_alignment  = detail::min(alignof(T), cache_line_size);
+    public:
+        static constexpr std::size_t value = std::has_virtual_destructor_v<T> ? dynamic_buffer_alignment : static_buffer_alignment;
     };
 
     template<typename T>
@@ -63,8 +74,8 @@ namespace detail
     template<typename T>
     struct always_heap_allocated
     {
-        inline static constexpr bool value = (sizeof(T) > buffer_size_v<T>) || (alignof(T) > buffer_alignment_v<T>) ||
-                                             (!std::is_abstract_v<T> && !std::is_nothrow_move_constructible_v<T>);
+        static constexpr bool value = (sizeof(T) > buffer_size_v<T>) || (alignof(T) > buffer_alignment_v<T>) ||
+                                      (!std::is_abstract_v<T> && !std::is_nothrow_move_constructible_v<T>);
     };
 
     template<typename T>
@@ -72,19 +83,19 @@ namespace detail
 
 
     template<typename T>
-    struct polymorphic_ptr_storage
+    void move_buffer(void* src, void* dst) noexcept
+    {
+        std::construct_at(static_cast<T*>(dst), std::move(*static_cast<T*>(src)));
+    }
+
+    template<typename T>
+    struct small_unique_ptr_base
     {
         using pointer       = std::remove_cv_t<T>*;
         using const_pointer = const std::remove_cv_t<T>*;
 
-        constexpr polymorphic_ptr_storage()  = default;
-        constexpr ~polymorphic_ptr_storage() = default;
-
-        polymorphic_ptr_storage(const polymorphic_ptr_storage&) = delete;
-        polymorphic_ptr_storage(polymorphic_ptr_storage&&)      = delete;
-
-        polymorphic_ptr_storage& operator=(const polymorphic_ptr_storage&) = delete;
-        polymorphic_ptr_storage& operator=(polymorphic_ptr_storage&&)      = delete;
+        using buffer_t      = unsigned char[buffer_size_v<T>];
+        using move_fn       = void(*)(void* src, void* dst) noexcept;
 
         pointer buffer(std::ptrdiff_t offset = 0) noexcept
         {
@@ -97,36 +108,66 @@ namespace detail
         }
 
         template<typename U>
-        void move_buffer_to(polymorphic_ptr_storage<U>& dst) noexcept
+        void move_buffer_to(small_unique_ptr_base<U>& dst) noexcept
         {
             move_(buffer(), dst.buffer());
             dst.move_ = move_;
         }
 
+        constexpr bool is_stack_allocated() const noexcept { return static_cast<bool>(this->move_); }
+
         alignas(buffer_alignment_v<T>)
-        mutable unsigned char buffer_[buffer_size_v<T>] = {};
-
-        T* data_ = nullptr;
-
-        using move_fn = void(*)(void* src, void* dst) noexcept;
+        mutable buffer_t buffer_;
+        T* data_      = nullptr;
         move_fn move_ = nullptr;
     };
 
     template<typename T>
-    requires(always_heap_allocated_v<T>)
-    struct polymorphic_ptr_storage<T> { T* data_ = nullptr; };
+    requires(!std::is_polymorphic_v<T> && !always_heap_allocated_v<T>)
+    struct small_unique_ptr_base<T>
+    {
+        using pointer       = std::remove_cv_t<T>*;
+        using const_pointer = const std::remove_cv_t<T>*;
 
+        using buffer_t      = unsigned char[buffer_size_v<T>];
+        using move_fn       = void(*)(void* src, void* dst) noexcept;
+
+        pointer buffer(std::ptrdiff_t offset = 0) noexcept
+        {
+            return std::launder(reinterpret_cast<pointer>(std::addressof(buffer_[0]) + offset));
+        }
+
+        const_pointer buffer(std::ptrdiff_t offset = 0) const noexcept
+        {
+            return std::launder(reinterpret_cast<const_pointer>(std::addressof(buffer_[0]) + offset));
+        }
+
+        template<typename U>
+        void move_buffer_to(small_unique_ptr_base<U>& dst) noexcept
+        {
+            std::construct_at(dst.buffer(), std::move(*buffer()));
+        }
+
+        constexpr bool is_stack_allocated() const noexcept { return !std::is_constant_evaluated() && (data_ == buffer()); }
+
+        alignas(buffer_alignment_v<T>)
+        mutable buffer_t buffer_;
+        T* data_ = nullptr;
+    };
 
     template<typename T>
-    void move_buffer(void* src, void* dst) noexcept
+    requires(always_heap_allocated_v<T>)
+    struct small_unique_ptr_base<T>
     {
-        std::construct_at(static_cast<T*>(dst), std::move(*static_cast<T*>(src)));
-    }
+        static constexpr bool is_stack_allocated() noexcept { return false; }
+
+        T* data_ = nullptr;
+    };
 
 } // namespace detail
 
 template<typename T>
-class small_unique_ptr : private detail::polymorphic_ptr_storage<T>
+class small_unique_ptr : private detail::small_unique_ptr_base<T>
 {
 public:
     static_assert(!std::is_array_v<T> && !std::is_void_v<T>);
@@ -147,12 +188,12 @@ public:
     {
         static_assert(!detail::is_proper_base_of_v<T, U> || std::has_virtual_destructor_v<T>);
 
-        if (!other.is_local() || std::is_constant_evaluated())
+        if (!other.is_stack_allocated() || std::is_constant_evaluated())
         {
             this->data_ = std::exchange(other.data_, nullptr);
             return;
         }
-        if constexpr (!detail::always_heap_allocated_v<U>) // other.is_local()
+        if constexpr (!detail::always_heap_allocated_v<U>) // other.is_stack_allocated()
         {
             other.move_buffer_to(*this);
             this->data_ = this->buffer(other.template offsetof_base<T>());
@@ -172,12 +213,12 @@ public:
     {
         static_assert(!detail::is_proper_base_of_v<T, U> || std::has_virtual_destructor_v<T>);
 
-        if (!other.is_local() || std::is_constant_evaluated())
+        if (!other.is_stack_allocated() || std::is_constant_evaluated())
         {
             reset(std::exchange(other.data_, nullptr));
             return *this;
         }
-        if constexpr (!detail::always_heap_allocated_v<U>) // other.is_local()
+        if constexpr (!detail::always_heap_allocated_v<U>) // other.is_stack_allocated()
         {
             reset();
             other.move_buffer_to(*this);
@@ -200,9 +241,9 @@ public:
 
     constexpr void reset(pointer new_data = pointer{}) noexcept
     {
-        is_local() ? std::destroy_at(this->data_) : delete this->data_;
+        is_stack_allocated() ? std::destroy_at(this->data_) : delete this->data_;
         this->data_ = new_data;
-        if constexpr (!detail::always_heap_allocated_v<T>) this->move_ = nullptr;
+        if constexpr (!detail::always_heap_allocated_v<T> && std::is_polymorphic_v<T>) this->move_ = nullptr;
     }
 
     constexpr void swap(small_unique_ptr& other) noexcept requires(detail::always_heap_allocated_v<T>)
@@ -212,12 +253,12 @@ public:
 
     constexpr void swap(small_unique_ptr& other) noexcept requires(!detail::always_heap_allocated_v<T>)
     {
-        if (is_local() && other.is_local())
+        if (is_stack_allocated() && other.is_stack_allocated())
         {
             const std::ptrdiff_t other_offset = other.offsetof_base();
             const std::ptrdiff_t this_offset  = this->offsetof_base();
 
-            detail::polymorphic_ptr_storage<T> temp;
+            detail::small_unique_ptr_base<T> temp;
 
             other.move_buffer_to(temp);
             std::destroy_at(other.data_);
@@ -229,17 +270,17 @@ public:
             this->data_ = this->buffer(other_offset);
             other.data_ = other.buffer(this_offset);
         }
-        else if (!is_local() && !other.is_local())
+        else if (!is_stack_allocated() && !other.is_stack_allocated())
         {
             std::swap(this->data_, other.data_);
         }
-        else if (!is_local() && other.is_local())
+        else if (!is_stack_allocated() && other.is_stack_allocated())
         {
             T* new_data = this->buffer(other.offsetof_base());
             other.move_buffer_to(*this);
             other.reset(std::exchange(this->data_, new_data));
         }
-        else /* if (is_local() && !other.is_local()) */
+        else /* if (is_stack_allocated() && !other.is_stack_allocated()) */
         {
             T* new_data = other.buffer(this->offsetof_base());
             this->move_buffer_to(other);
@@ -296,13 +337,10 @@ public:
     }
 
 private:
-    constexpr bool is_local() const noexcept requires(!detail::always_heap_allocated_v<T>) { return this->move_; }
-    constexpr bool is_local() const noexcept requires(detail::always_heap_allocated_v<T>)  { return false; }
-
     template<typename B = T>
     constexpr std::ptrdiff_t offsetof_base() const noexcept
     {
-        if (!is_local()) return 0;
+        if (!is_stack_allocated()) return 0;
 
         const auto derived_ptr = reinterpret_cast<const volatile unsigned char*>(this->buffer());
         const auto base_ptr    = reinterpret_cast<const volatile unsigned char*>(static_cast<const volatile B*>(this->data_));
@@ -314,7 +352,8 @@ private:
     friend class small_unique_ptr;
 
     template<typename U, typename... Args>
-    friend constexpr small_unique_ptr<U> make_unique_small(Args&&...);
+    friend constexpr small_unique_ptr<U> make_unique_small(Args&&...)
+    noexcept(!detail::always_heap_allocated_v<U> && std::is_nothrow_constructible_v<U, Args...>);
 };
 
 template<typename T>
@@ -325,6 +364,7 @@ constexpr void swap(small_unique_ptr<T>& lhs, small_unique_ptr<T>& rhs) noexcept
 
 template<typename T, typename... Args>
 [[nodiscard]] constexpr small_unique_ptr<T> make_unique_small(Args&&... args)
+noexcept(!detail::always_heap_allocated_v<T> && std::is_nothrow_constructible_v<T, Args...>)
 {
     small_unique_ptr<T> ptr;
 
@@ -332,10 +372,14 @@ template<typename T, typename... Args>
     {
         ptr.data_ = new T(std::forward<Args>(args)...);
     }
-    else if constexpr (!detail::always_heap_allocated_v<T>)
+    else if constexpr (!detail::always_heap_allocated_v<T> && std::is_polymorphic_v<T>)
     {
         ptr.data_ = std::construct_at(ptr.buffer(), std::forward<Args>(args)...);
         ptr.move_ = detail::move_buffer<T>;
+    }
+    else if constexpr (!detail::always_heap_allocated_v<T> && !std::is_polymorphic_v<T>)
+    {
+        ptr.data_ = std::construct_at(ptr.buffer(), std::forward<Args>(args)...);
     }
 
     return ptr;
