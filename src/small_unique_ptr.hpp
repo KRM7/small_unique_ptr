@@ -325,6 +325,9 @@ public:
     }
 
     [[nodiscard]]
+    pointer release() noexcept = delete;
+
+    [[nodiscard]]
     constexpr static bool is_always_heap_allocated() noexcept
     {
         return detail::is_always_heap_allocated_v<T>;
