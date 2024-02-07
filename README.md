@@ -13,10 +13,10 @@ The size of a `small_unique_ptr<T>` object is:
 
 The interface matches `std::unique_ptr<T>`, except for:
 
- - There is no deleter template parameter and no associated methods
+ - There is no `Deleter` template parameter or any of the associated methods
  - Constructors from pointers are not provided except for the `nullptr` constructor
  - `release()` is not implemented
- - The type of T can't be an array type or `void`
+ - `T` can't be an incomplete type or an array type
  - There are a couple of extra methods for checking where objects are allocated
 
 The stack buffer is not used in constant evaluated contexts, so any constexpr usage

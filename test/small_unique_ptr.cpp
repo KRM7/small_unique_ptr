@@ -13,6 +13,11 @@ struct Base
     constexpr virtual void value(int) {}
     constexpr virtual int padding() const { return 0; }
     constexpr virtual ~Base() noexcept {};
+
+    virtual void small_unique_ptr_move(void* dst) noexcept
+    {
+        std::construct_at(static_cast<Base*>(dst), std::move(*this));
+    }
 };
 
 template<size_t Padding>
@@ -25,6 +30,12 @@ public:
     constexpr int value() const override { return value_; }
     constexpr void value(int n) override { value_ = n; }
     constexpr int padding() const override { return Padding; }
+
+    void small_unique_ptr_move(void* dst) noexcept override
+    {
+        std::construct_at(static_cast<Derived*>(dst), std::move(*this));
+    }
+
 private:
     unsigned char padding_[Padding] = {};
     int value_ = Padding;
@@ -37,12 +48,22 @@ struct SmallPOD { char dummy_; };
 struct LargePOD { char dummy_[128]; };
 
 
+TEST_CASE("traits", "[small_unique_ptr]")
+{
+    STATIC_REQUIRE(std::is_standard_layout_v<small_unique_ptr<Base>>);
+    STATIC_REQUIRE(std::is_standard_layout_v<small_unique_ptr<SmallDerived>>);
+    STATIC_REQUIRE(std::is_standard_layout_v<small_unique_ptr<LargeDerived>>);
+
+    STATIC_REQUIRE(std::is_standard_layout_v<small_unique_ptr<SmallPOD>>);
+    STATIC_REQUIRE(std::is_standard_layout_v<small_unique_ptr<LargePOD>>);
+}
+
 TEST_CASE("object_size", "[small_unique_ptr]")
 {
-    STATIC_REQUIRE(sizeof(small_unique_ptr<SmallDerived>) == detail::cache_line_size);
+    STATIC_REQUIRE(sizeof(small_unique_ptr<SmallDerived>) == detail::small_ptr_size);
     STATIC_REQUIRE(sizeof(small_unique_ptr<LargeDerived>) == sizeof(void*));
 
-    STATIC_REQUIRE(alignof(small_unique_ptr<SmallDerived>) == detail::cache_line_size);
+    STATIC_REQUIRE(alignof(small_unique_ptr<SmallDerived>) == detail::small_ptr_size);
     STATIC_REQUIRE(alignof(small_unique_ptr<LargeDerived>) == alignof(void*));
 
     STATIC_REQUIRE(sizeof(small_unique_ptr<SmallPOD>) <= 2 * sizeof(void*));
@@ -67,8 +88,12 @@ TEST_CASE("construction", "[small_unique_ptr]")
     REQUIRE_NOTHROW(make_unique_small<Base>());
     REQUIRE_NOTHROW(make_unique_small<SmallDerived>());
     REQUIRE_NOTHROW(make_unique_small<LargeDerived>());
+
     REQUIRE_NOTHROW(make_unique_small<SmallPOD>());
     REQUIRE_NOTHROW(make_unique_small<LargePOD>());
+
+    REQUIRE_NOTHROW(make_unique_small<const SmallPOD>());
+    REQUIRE_NOTHROW(make_unique_small<const LargePOD>());
 }
 
 TEST_CASE("is_always_heap_allocated", "[small_unique_ptr]")
