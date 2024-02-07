@@ -55,6 +55,16 @@ namespace detail
     inline constexpr bool is_proper_base_of_v = is_proper_base_of<Base, Derived>::value;
 
 
+    template<typename T, typename = void>
+    struct is_complete : std::false_type {};
+
+    template<typename T>
+    struct is_complete<T, std::void_t<decltype(sizeof(T))>> : std::true_type {};
+
+    template<typename T>
+    inline constexpr bool is_complete_v = is_complete<T>::value;
+
+
     inline constexpr std::size_t small_ptr_size = 64;
 
 
@@ -203,7 +213,7 @@ template<typename T>
 class small_unique_ptr : private detail::small_unique_ptr_base<T>
 {
 public:
-    static_assert(!std::is_array_v<T> && !std::is_void_v<T>);
+    static_assert(detail::is_complete_v<T> && !std::is_array_v<T>);
 
     using element_type = T;
     using pointer      = T*;
