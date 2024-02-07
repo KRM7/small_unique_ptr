@@ -281,14 +281,17 @@ public:
         this->data_ = new_data;
     }
 
-    constexpr void swap(small_unique_ptr& other) noexcept requires(detail::is_always_heap_allocated_v<T>)
+    constexpr void swap(small_unique_ptr& other) noexcept
     {
-        std::swap(this->data_, other.data_);
-    }
-
-    constexpr void swap(small_unique_ptr& other) noexcept requires(!detail::is_always_heap_allocated_v<T>)
-    {
-        if (is_stack_allocated() && other.is_stack_allocated())
+        if constexpr (is_always_heap_allocated())
+        {
+            std::swap(this->data_, other.data_);
+        }
+        else if (!is_stack_allocated() && !other.is_stack_allocated())
+        {
+            std::swap(this->data_, other.data_);
+        }
+        else if (is_stack_allocated() && other.is_stack_allocated())
         {
             const std::ptrdiff_t other_offset = other.offsetof_base();
             const std::ptrdiff_t this_offset  = this->offsetof_base();
@@ -305,10 +308,6 @@ public:
 
             this->data_ = this->buffer(other_offset);
             other.data_ = other.buffer(this_offset);
-        }
-        else if (!is_stack_allocated() && !other.is_stack_allocated())
-        {
-            std::swap(this->data_, other.data_);
         }
         else if (!is_stack_allocated() && other.is_stack_allocated())
         {
@@ -328,7 +327,7 @@ public:
     pointer release() noexcept = delete;
 
     [[nodiscard]]
-    constexpr static bool is_always_heap_allocated() noexcept
+    static constexpr bool is_always_heap_allocated() noexcept
     {
         return detail::is_always_heap_allocated_v<T>;
     }
