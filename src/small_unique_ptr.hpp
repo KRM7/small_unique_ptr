@@ -206,6 +206,8 @@ namespace detail
         T* data_ = nullptr;
     };
 
+    struct make_unique_small_impl;
+
 } // namespace detail
 
 
@@ -417,8 +419,7 @@ private:
     template<typename U>
     friend class small_unique_ptr;
 
-    template<typename U, typename... Args>
-    friend constexpr small_unique_ptr<U> make_unique_small(Args&&...);
+    friend struct detail::make_unique_small_impl;
 };
 
 template<typename T>
@@ -440,26 +441,41 @@ namespace std
 
 } // namespace std
 
+namespace detail
+{
+    struct make_unique_small_impl
+    {
+        template<typename T, typename... Args>
+        static constexpr small_unique_ptr<T> invoke(Args... args)
+        noexcept(std::is_nothrow_constructible_v<T, Args...> && !detail::is_always_heap_allocated_v<T>)
+        {
+            small_unique_ptr<T> ptr;
+
+            if (detail::is_always_heap_allocated_v<T> || std::is_constant_evaluated())
+            {
+                ptr.data_ = new T(std::forward<Args>(args)...);
+            }
+            else if constexpr (!detail::is_always_heap_allocated_v<T> && std::is_polymorphic_v<T> && !detail::has_virtual_move<T>)
+            {
+                ptr.data_ = std::construct_at(ptr.buffer(), std::forward<Args>(args)...);
+                ptr.move_ = detail::move_buffer<std::remove_cv_t<T>>;
+            }
+            else if constexpr (!detail::is_always_heap_allocated_v<T>)
+            {
+                ptr.data_ = std::construct_at(ptr.buffer(), std::forward<Args>(args)...);
+            }
+
+            return ptr;
+        }
+    };
+
+} // namespace detail
+
 template<typename T, typename... Args>
 [[nodiscard]] constexpr small_unique_ptr<T> make_unique_small(Args&&... args)
+noexcept(std::is_nothrow_constructible_v<T, Args...> && !detail::is_always_heap_allocated_v<T>)
 {
-    small_unique_ptr<T> ptr;
-
-    if (detail::is_always_heap_allocated_v<T> || std::is_constant_evaluated())
-    {
-        ptr.data_ = new T(std::forward<Args>(args)...);
-    }
-    else if constexpr (!detail::is_always_heap_allocated_v<T> && std::is_polymorphic_v<T> && !detail::has_virtual_move<T>)
-    {
-        ptr.data_ = std::construct_at(ptr.buffer(), std::forward<Args>(args)...);
-        ptr.move_ = detail::move_buffer<std::remove_cv_t<T>>;
-    }
-    else if constexpr (!detail::is_always_heap_allocated_v<T>)
-    {
-        ptr.data_ = std::construct_at(ptr.buffer(), std::forward<Args>(args)...);
-    }
-
-    return ptr;
+    return detail::make_unique_small_impl::invoke<T>(std::forward<Args>(args)...);
 }
 
 #endif // !SMALL_UNIQUE_PTR_HPP

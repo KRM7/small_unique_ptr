@@ -96,6 +96,12 @@ TEST_CASE("construction", "[small_unique_ptr]")
     REQUIRE_NOTHROW(make_unique_small<const LargePOD>());
 }
 
+TEST_CASE("noexcept_construction", "[small_unique_ptr]")
+{
+    STATIC_REQUIRE(noexcept(make_unique_small<SmallDerived>()));
+    STATIC_REQUIRE(!noexcept(make_unique_small<LargeDerived>()));
+}
+
 TEST_CASE("is_always_heap_allocated", "[small_unique_ptr]")
 {
     STATIC_REQUIRE(!small_unique_ptr<SmallDerived>::is_always_heap_allocated());
