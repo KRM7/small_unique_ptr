@@ -108,8 +108,23 @@ TEST_CASE("object_size", "[small_unique_ptr]")
 
     STATIC_REQUIRE(alignof(small_unique_ptr<SmallIntrusive>) == detail::small_ptr_size);
     STATIC_REQUIRE(alignof(small_unique_ptr<LargeIntrusive>) == alignof(void*));
+}
 
-    STATIC_REQUIRE(detail::buffer_size_v<BaseIntrusive> > detail::buffer_size_v<Base>);
+TEST_CASE("stack_buffer_size", "[small_unique_ptr]")
+{
+    STATIC_REQUIRE(small_unique_ptr<SmallPOD>::stack_buffer_size() == sizeof(SmallPOD));
+    STATIC_REQUIRE(small_unique_ptr<LargePOD>::stack_buffer_size() == 0);
+
+    STATIC_REQUIRE(small_unique_ptr<LargeDerived>::stack_buffer_size() == 0);
+    STATIC_REQUIRE(small_unique_ptr<LargeIntrusive>::stack_buffer_size() == 0);
+
+    STATIC_REQUIRE(small_unique_ptr<SmallIntrusive>::stack_buffer_size() > small_unique_ptr<SmallDerived>::stack_buffer_size());
+}
+
+TEST_CASE("stack_buffer_size_archdep", "[small_unique_ptr][!mayfail]")
+{  
+    REQUIRE(small_unique_ptr<SmallDerived>::stack_buffer_size() == 48);
+    REQUIRE(small_unique_ptr<SmallIntrusive>::stack_buffer_size() == 56);
 }
 
 TEMPLATE_TEST_CASE("construction", "[small_unique_ptr]", SmallPOD, LargePOD, Base, SmallDerived, LargeDerived, BaseIntrusive, SmallIntrusive, LargeIntrusive)
@@ -171,6 +186,9 @@ TEST_CASE("is_stack_allocated", "[small_unique_ptr]")
     small_unique_ptr<LargePOD> p6 = make_unique_small<LargePOD>();
     REQUIRE(p5.is_stack_allocated());
     REQUIRE(!p6.is_stack_allocated());
+
+    small_unique_ptr<SmallPOD> np(nullptr);
+    REQUIRE(!np.is_stack_allocated());
 }
 
 TEST_CASE("comparisons", "[small_unique_ptr]")

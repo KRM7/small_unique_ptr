@@ -352,6 +352,13 @@ public:
     }
 
     [[nodiscard]]
+    static constexpr std::size_t stack_buffer_size() noexcept
+    {
+        if constexpr (detail::is_always_heap_allocated_v<T>) return 0;
+        else return detail::buffer_size_v<T>;
+    }
+
+    [[nodiscard]]
     constexpr pointer get() const noexcept
     {
         return this->data_;
