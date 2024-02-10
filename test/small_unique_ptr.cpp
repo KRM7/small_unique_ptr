@@ -1,23 +1,22 @@
 /* Copyright (c) 2024 Krisztián Rugási. Subject to the MIT License. */
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/catch_template_test_macros.hpp>
 #include <small_unique_ptr.hpp>
 #include <functional>
 #include <bit>
 #include <utility>
 #include <cstdint>
 
+
+struct SmallPOD { char dummy_; };
+struct LargePOD { char dummy_[128]; };
+
 struct Base
 {
     constexpr virtual int value() const { return 0; }
-    constexpr virtual void value(int) {}
     constexpr virtual int padding() const { return 0; }
     constexpr virtual ~Base() noexcept {};
-
-    virtual void small_unique_ptr_move(void* dst) noexcept
-    {
-        std::construct_at(static_cast<Base*>(dst), std::move(*this));
-    }
 };
 
 template<size_t Padding>
@@ -28,13 +27,7 @@ public:
     constexpr Derived(int n) noexcept : value_(n) {}
     constexpr ~Derived() noexcept override {}
     constexpr int value() const override { return value_; }
-    constexpr void value(int n) override { value_ = n; }
     constexpr int padding() const override { return Padding; }
-
-    void small_unique_ptr_move(void* dst) noexcept override
-    {
-        std::construct_at(static_cast<Derived*>(dst), std::move(*this));
-    }
 
 private:
     unsigned char padding_[Padding] = {};
@@ -44,56 +37,95 @@ private:
 using SmallDerived = Derived<32>;
 using LargeDerived = Derived<64>;
 
-struct SmallPOD { char dummy_; };
-struct LargePOD { char dummy_[128]; };
-
-
-TEST_CASE("traits", "[small_unique_ptr]")
+struct BaseIntrusive
 {
+    constexpr virtual int value() const { return 0; }
+    constexpr virtual int padding() const { return 0; }
+    constexpr virtual ~BaseIntrusive() noexcept {};
+
+    virtual void small_unique_ptr_move(void* dst) noexcept
+    {
+        std::construct_at(static_cast<BaseIntrusive*>(dst), std::move(*this));
+    }
+};
+
+template<size_t Padding>
+struct DerivedIntrusive : BaseIntrusive
+{
+public:
+    constexpr DerivedIntrusive() = default;
+    constexpr DerivedIntrusive(int n) noexcept : value_(n) {}
+    constexpr ~DerivedIntrusive() noexcept override {}
+    constexpr int value() const override { return value_; }
+    constexpr int padding() const override { return Padding; }
+
+    void small_unique_ptr_move(void* dst) noexcept override
+    {
+        std::construct_at(static_cast<DerivedIntrusive*>(dst), std::move(*this));
+    }
+
+private:
+    unsigned char padding_[Padding] = {};
+    int value_ = Padding;
+};
+
+using SmallIntrusive = DerivedIntrusive<32>;
+using LargeIntrusive = DerivedIntrusive<64>;
+
+
+TEST_CASE("object_layout", "[small_unique_ptr]")
+{
+    STATIC_REQUIRE(std::is_standard_layout_v<small_unique_ptr<SmallPOD>>);
+    STATIC_REQUIRE(std::is_standard_layout_v<small_unique_ptr<LargePOD>>);
+
     STATIC_REQUIRE(std::is_standard_layout_v<small_unique_ptr<Base>>);
     STATIC_REQUIRE(std::is_standard_layout_v<small_unique_ptr<SmallDerived>>);
     STATIC_REQUIRE(std::is_standard_layout_v<small_unique_ptr<LargeDerived>>);
 
-    STATIC_REQUIRE(std::is_standard_layout_v<small_unique_ptr<SmallPOD>>);
-    STATIC_REQUIRE(std::is_standard_layout_v<small_unique_ptr<LargePOD>>);
+    STATIC_REQUIRE(std::is_standard_layout_v<small_unique_ptr<BaseIntrusive>>);
+    STATIC_REQUIRE(std::is_standard_layout_v<small_unique_ptr<SmallIntrusive>>);
+    STATIC_REQUIRE(std::is_standard_layout_v<small_unique_ptr<LargeIntrusive>>);
 }
 
 TEST_CASE("object_size", "[small_unique_ptr]")
 {
+    STATIC_REQUIRE(sizeof(small_unique_ptr<SmallPOD>) <= 2 * sizeof(void*));
+    STATIC_REQUIRE(sizeof(small_unique_ptr<LargePOD>) == sizeof(void*));
+
+    STATIC_REQUIRE(alignof(small_unique_ptr<SmallPOD>) == alignof(void*));
+    STATIC_REQUIRE(alignof(small_unique_ptr<LargePOD>) == alignof(void*));
+
+
     STATIC_REQUIRE(sizeof(small_unique_ptr<SmallDerived>) == detail::small_ptr_size);
     STATIC_REQUIRE(sizeof(small_unique_ptr<LargeDerived>) == sizeof(void*));
 
     STATIC_REQUIRE(alignof(small_unique_ptr<SmallDerived>) == detail::small_ptr_size);
     STATIC_REQUIRE(alignof(small_unique_ptr<LargeDerived>) == alignof(void*));
 
-    STATIC_REQUIRE(sizeof(small_unique_ptr<SmallPOD>) <= 2 * sizeof(void*));
-    STATIC_REQUIRE(sizeof(small_unique_ptr<LargePOD>) == sizeof(void*));
+
+    STATIC_REQUIRE(sizeof(small_unique_ptr<SmallIntrusive>) == detail::small_ptr_size);
+    STATIC_REQUIRE(sizeof(small_unique_ptr<LargeIntrusive>) == sizeof(void*));
+
+    STATIC_REQUIRE(alignof(small_unique_ptr<SmallIntrusive>) == detail::small_ptr_size);
+    STATIC_REQUIRE(alignof(small_unique_ptr<LargeIntrusive>) == alignof(void*));
+
+    STATIC_REQUIRE(detail::buffer_size_v<BaseIntrusive> > detail::buffer_size_v<Base>);
 }
 
-TEST_CASE("construction", "[small_unique_ptr]")
+TEMPLATE_TEST_CASE("construction", "[small_unique_ptr]", SmallPOD, LargePOD, Base, SmallDerived, LargeDerived, BaseIntrusive, SmallIntrusive, LargeIntrusive)
 {
-    STATIC_REQUIRE( std::invoke([]{ (void) small_unique_ptr<Base>(nullptr);  return true; }) );
-    STATIC_REQUIRE( std::invoke([]{ (void) small_unique_ptr<SmallDerived>(); return true; }) );
-    STATIC_REQUIRE( std::invoke([]{ (void) small_unique_ptr<LargeDerived>(); return true; }) );
-    STATIC_REQUIRE( std::invoke([]{ (void) small_unique_ptr<SmallPOD>();     return true; }) );
-    STATIC_REQUIRE( std::invoke([]{ (void) small_unique_ptr<LargePOD>();     return true; }) );
+    STATIC_REQUIRE( std::invoke([]{ (void) small_unique_ptr<TestType>();              return true; }) );
+    STATIC_REQUIRE( std::invoke([]{ (void) small_unique_ptr<const TestType>();        return true; }) );
+    STATIC_REQUIRE( std::invoke([]{ (void) small_unique_ptr<TestType>(nullptr);       return true; }) );
+    STATIC_REQUIRE( std::invoke([]{ (void) small_unique_ptr<const TestType>(nullptr); return true; }) );
 
-    STATIC_REQUIRE( std::invoke([]{ (void) make_unique_small<double>(3.0);    return true; }) );
-    STATIC_REQUIRE( std::invoke([]{ (void) make_unique_small<Base>();         return true; }) );
-    STATIC_REQUIRE( std::invoke([]{ (void) make_unique_small<SmallDerived>(); return true; }) );
-    STATIC_REQUIRE( std::invoke([]{ (void) make_unique_small<LargeDerived>(); return true; }) );
-    STATIC_REQUIRE( std::invoke([]{ (void) make_unique_small<SmallPOD>();     return true; }) );
-    STATIC_REQUIRE( std::invoke([]{ (void) make_unique_small<LargePOD>();     return true; }) );
+    STATIC_REQUIRE( std::invoke([]{ (void) make_unique_small<TestType>();       return true; }) );
+    STATIC_REQUIRE( std::invoke([]{ (void) make_unique_small<const TestType>(); return true; }) );
 
-    REQUIRE_NOTHROW(make_unique_small<Base>());
-    REQUIRE_NOTHROW(make_unique_small<SmallDerived>());
-    REQUIRE_NOTHROW(make_unique_small<LargeDerived>());
+    (void) make_unique_small<TestType>();
+    (void) make_unique_small<const TestType>();
 
-    REQUIRE_NOTHROW(make_unique_small<SmallPOD>());
-    REQUIRE_NOTHROW(make_unique_small<LargePOD>());
-
-    REQUIRE_NOTHROW(make_unique_small<const SmallPOD>());
-    REQUIRE_NOTHROW(make_unique_small<const LargePOD>());
+    SUCCEED();
 }
 
 TEST_CASE("noexcept_construction", "[small_unique_ptr]")
@@ -104,11 +136,14 @@ TEST_CASE("noexcept_construction", "[small_unique_ptr]")
 
 TEST_CASE("is_always_heap_allocated", "[small_unique_ptr]")
 {
+    STATIC_REQUIRE(!small_unique_ptr<SmallPOD>::is_always_heap_allocated());
+    STATIC_REQUIRE(small_unique_ptr<LargePOD>::is_always_heap_allocated());
+
     STATIC_REQUIRE(!small_unique_ptr<SmallDerived>::is_always_heap_allocated());
     STATIC_REQUIRE(small_unique_ptr<LargeDerived>::is_always_heap_allocated());
 
-    STATIC_REQUIRE(!small_unique_ptr<SmallPOD>::is_always_heap_allocated());
-    STATIC_REQUIRE(small_unique_ptr<LargePOD>::is_always_heap_allocated());
+    STATIC_REQUIRE(!small_unique_ptr<SmallIntrusive>::is_always_heap_allocated());
+    STATIC_REQUIRE(small_unique_ptr<LargeIntrusive>::is_always_heap_allocated());
 }
 
 TEST_CASE("is_stack_allocated", "[small_unique_ptr]")
@@ -116,20 +151,26 @@ TEST_CASE("is_stack_allocated", "[small_unique_ptr]")
     STATIC_REQUIRE( !std::invoke([]{ return make_unique_small<SmallDerived>().is_stack_allocated(); }) );
     STATIC_REQUIRE( !std::invoke([]{ return make_unique_small<LargeDerived>().is_stack_allocated(); }) );
 
+    STATIC_REQUIRE( !std::invoke([]{ return make_unique_small<SmallIntrusive>().is_stack_allocated(); }) );
+    STATIC_REQUIRE( !std::invoke([]{ return make_unique_small<LargeIntrusive>().is_stack_allocated(); }) );
+
     STATIC_REQUIRE( !std::invoke([]{ return make_unique_small<SmallPOD>().is_stack_allocated(); }) );
     STATIC_REQUIRE( !std::invoke([]{ return make_unique_small<LargePOD>().is_stack_allocated(); }) );
 
     small_unique_ptr<Base> p1 = make_unique_small<SmallDerived>();
     small_unique_ptr<Base> p2 = make_unique_small<LargeDerived>();
-
     REQUIRE(p1.is_stack_allocated());
     REQUIRE(!p2.is_stack_allocated());
 
-    small_unique_ptr<SmallPOD> p3 = make_unique_small<SmallPOD>();
-    small_unique_ptr<LargePOD> p4 = make_unique_small<LargePOD>();
-
+    small_unique_ptr<BaseIntrusive> p3 = make_unique_small<SmallIntrusive>();
+    small_unique_ptr<BaseIntrusive> p4 = make_unique_small<LargeIntrusive>();
     REQUIRE(p3.is_stack_allocated());
     REQUIRE(!p4.is_stack_allocated());
+
+    small_unique_ptr<SmallPOD> p5 = make_unique_small<SmallPOD>();
+    small_unique_ptr<LargePOD> p6 = make_unique_small<LargePOD>();
+    REQUIRE(p5.is_stack_allocated());
+    REQUIRE(!p6.is_stack_allocated());
 }
 
 TEST_CASE("comparisons", "[small_unique_ptr]")
@@ -144,40 +185,22 @@ TEST_CASE("comparisons", "[small_unique_ptr]")
     STATIC_REQUIRE(make_unique_small<Base>() != make_unique_small<SmallDerived>());
 }
 
-TEST_CASE("bool_conversion", "[small_unique_ptr]")
+TEMPLATE_TEST_CASE("bool_conversion", "[small_unique_ptr]", Base, SmallDerived, LargeDerived, SmallPOD, LargePOD)
 {
-    STATIC_REQUIRE(!small_unique_ptr<SmallDerived>());
-    STATIC_REQUIRE(!small_unique_ptr<LargeDerived>(nullptr));
+    STATIC_REQUIRE(!small_unique_ptr<TestType>());
+    STATIC_REQUIRE(make_unique_small<TestType>());
 
-    STATIC_REQUIRE(make_unique_small<SmallDerived>());
-    STATIC_REQUIRE(make_unique_small<LargeDerived>());
-
-    STATIC_REQUIRE(make_unique_small<SmallPOD>());
-    STATIC_REQUIRE(make_unique_small<LargePOD>());
-
-    REQUIRE(make_unique_small<SmallDerived>());
-    REQUIRE(make_unique_small<LargeDerived>());
-
-    REQUIRE(make_unique_small<SmallPOD>());
-    REQUIRE(make_unique_small<LargePOD>());
+    REQUIRE(!small_unique_ptr<TestType>());
+    REQUIRE(make_unique_small<TestType>());
 }
 
-TEST_CASE("get", "[small_unique_ptr]")
+TEMPLATE_TEST_CASE("get", "[small_unique_ptr]", Base, SmallDerived, LargeDerived, SmallPOD, LargePOD)
 {
-    STATIC_REQUIRE(small_unique_ptr<SmallDerived>(nullptr).get() == nullptr);
-    STATIC_REQUIRE(small_unique_ptr<LargeDerived>().get() == nullptr);
+    STATIC_REQUIRE(small_unique_ptr<TestType>().get() == nullptr);
+    STATIC_REQUIRE(make_unique_small<TestType>().get() != nullptr);
 
-    STATIC_REQUIRE(make_unique_small<SmallDerived>().get() != nullptr);
-    STATIC_REQUIRE(make_unique_small<LargeDerived>().get() != nullptr);
-
-    STATIC_REQUIRE(make_unique_small<SmallPOD>().get() != nullptr);
-    STATIC_REQUIRE(make_unique_small<LargePOD>().get() != nullptr);
-
-    REQUIRE(make_unique_small<SmallDerived>().get() != nullptr);
-    REQUIRE(make_unique_small<LargeDerived>().get() != nullptr);
-
-    REQUIRE(make_unique_small<SmallPOD>().get() != nullptr);
-    REQUIRE(make_unique_small<LargePOD>().get() != nullptr);
+    REQUIRE(small_unique_ptr<TestType>() == nullptr);
+    REQUIRE(make_unique_small<TestType>().get() != nullptr);
 }
 
 TEST_CASE("dereference", "[small_unique_ptr]")
@@ -188,12 +211,15 @@ TEST_CASE("dereference", "[small_unique_ptr]")
     STATIC_REQUIRE(make_unique_small<SmallDerived>()->padding() == 32);
     STATIC_REQUIRE(make_unique_small<LargeDerived>()->padding() == 64);
 
+    const auto p0 = make_unique_small<const Base>();
     const auto p1 = make_unique_small<SmallDerived>();
     const auto p2 = make_unique_small<LargeDerived>();
 
+    REQUIRE((*p0).value() == 0);
     REQUIRE((*p1).value() == 32);
     REQUIRE((*p2).value() == 64);
 
+    REQUIRE(p0->value() == 0);
     REQUIRE(p1->value() == 32);
     REQUIRE(p2->value() == 64);
 }
@@ -203,21 +229,34 @@ TEST_CASE("move_construct_plain", "[small_unique_ptr]")
     STATIC_REQUIRE(32 == std::invoke([] { small_unique_ptr<Base> p = make_unique_small<SmallDerived>(); return p->padding(); }));
     STATIC_REQUIRE(64 == std::invoke([] { small_unique_ptr<Base> p = make_unique_small<LargeDerived>(); return p->padding(); }));
 
+    STATIC_REQUIRE(32 == std::invoke([] { small_unique_ptr<BaseIntrusive> p = make_unique_small<SmallIntrusive>(); return p->padding(); }));
+    STATIC_REQUIRE(64 == std::invoke([] { small_unique_ptr<BaseIntrusive> p = make_unique_small<LargeIntrusive>(); return p->padding(); }));
+
     STATIC_REQUIRE( std::invoke([] { small_unique_ptr<const SmallPOD> p = make_unique_small<SmallPOD>(); return true; }) );
     STATIC_REQUIRE( std::invoke([] { small_unique_ptr<volatile LargePOD> p = make_unique_small<LargePOD>(); return true; } ));
 
+
     small_unique_ptr<Base> base1 = make_unique_small<SmallDerived>();
     small_unique_ptr<Base> base2 = make_unique_small<LargeDerived>();
-
     REQUIRE(base1->value() == 32);
     REQUIRE(base2->value() == 64);
 
     small_unique_ptr<const Base> cbase = std::move(base1);
-
     REQUIRE(cbase->value() == 32);
+    REQUIRE(base1 == nullptr);
 
-    small_unique_ptr<const SmallPOD> cpod1 = make_unique_small<SmallPOD>();
-    small_unique_ptr<const LargePOD> cpod2 = make_unique_small<LargePOD>();
+
+    small_unique_ptr<BaseIntrusive> ibase1 = make_unique_small<SmallIntrusive>();
+    small_unique_ptr<BaseIntrusive> ibase2 = make_unique_small<LargeIntrusive>();
+    REQUIRE(ibase1->value() == 32);
+    REQUIRE(ibase2->value() == 64);
+
+    small_unique_ptr<const BaseIntrusive> icbase = std::move(ibase1);
+    REQUIRE(icbase->value() == 32);
+    REQUIRE(ibase1 == nullptr);
+
+    small_unique_ptr<const volatile SmallPOD> cpod1 = make_unique_small<SmallPOD>();
+    small_unique_ptr<const volatile LargePOD> cpod2 = make_unique_small<LargePOD>();
     SUCCEED();
 }
 
@@ -226,8 +265,12 @@ TEST_CASE("move_assignment_plain", "[small_unique_ptr]")
     STATIC_REQUIRE(32 == std::invoke([] { small_unique_ptr<Base> p; p = make_unique_small<SmallDerived>(); return p->padding(); }));
     STATIC_REQUIRE(64 == std::invoke([] { small_unique_ptr<Base> p; p = make_unique_small<LargeDerived>(); return p->padding(); }));
 
+    STATIC_REQUIRE(32 == std::invoke([] { small_unique_ptr<BaseIntrusive> p; p = make_unique_small<SmallIntrusive>(); return p->padding(); }));
+    STATIC_REQUIRE(64 == std::invoke([] { small_unique_ptr<BaseIntrusive> p; p = make_unique_small<LargeIntrusive>(); return p->padding(); }));
+
     STATIC_REQUIRE( std::invoke([] { small_unique_ptr<const SmallPOD> p; p = make_unique_small<SmallPOD>(); return true; }) );
     STATIC_REQUIRE( std::invoke([] { small_unique_ptr<const LargePOD> p; p = make_unique_small<LargePOD>(); return true; }) );
+
 
     small_unique_ptr<const Base> base;
 
@@ -240,8 +283,21 @@ TEST_CASE("move_assignment_plain", "[small_unique_ptr]")
     base = nullptr;
     REQUIRE(!base);
 
-    small_unique_ptr<const SmallPOD> cpod1 = make_unique_small<SmallPOD>();
-    small_unique_ptr<const LargePOD> cpod2 = make_unique_small<LargePOD>();
+
+    small_unique_ptr<const BaseIntrusive> ibase;
+
+    ibase = make_unique_small<SmallIntrusive>();
+    REQUIRE(ibase->value() == 32);
+
+    ibase = make_unique_small<LargeIntrusive>();
+    REQUIRE(ibase->value() == 64);
+
+    ibase = nullptr;
+    REQUIRE(!ibase);
+
+
+    small_unique_ptr<const volatile SmallPOD> cpod1; cpod1 = make_unique_small<SmallPOD>();
+    small_unique_ptr<const volatile LargePOD> cpod2; cpod2 = make_unique_small<LargePOD>();
     SUCCEED();
 }
 
@@ -269,6 +325,23 @@ TEST_CASE("swap_large", "[small_unique_ptr]")
     REQUIRE(p1->value() == 64);
 }
 
+TEST_CASE("swap_small", "[small_unique_ptr]")
+{
+    small_unique_ptr<Base> p1 = make_unique_small<SmallDerived>(1);
+    small_unique_ptr<Base> p2 = make_unique_small<SmallDerived>(2);
+
+    using std::swap;
+    swap(p1, p2);
+
+    REQUIRE(p1->value() == 2);
+    REQUIRE(p2->value() == 1);
+
+    swap(p1, p2);
+
+    REQUIRE(p1->value() == 1);
+    REQUIRE(p2->value() == 2);
+}
+
 TEST_CASE("swap_mixed", "[small_unique_ptr]")
 {
     using std::swap;
@@ -290,10 +363,22 @@ TEST_CASE("swap_mixed", "[small_unique_ptr]")
     REQUIRE(p2->value() == 64);
 }
 
-TEST_CASE("swap_small", "[small_unique_ptr]")
+TEST_CASE("swap_large_intrusive", "[small_unique_ptr]")
 {
-    small_unique_ptr<Base> p1 = make_unique_small<SmallDerived>(1);
-    small_unique_ptr<Base> p2 = make_unique_small<SmallDerived>(2);
+    small_unique_ptr<BaseIntrusive> p1 = nullptr;
+    small_unique_ptr<BaseIntrusive> p2 = make_unique_small<LargeIntrusive>();
+
+    using std::swap;
+    swap(p1, p2);
+
+    REQUIRE(p2 == nullptr);
+    REQUIRE(p1->value() == 64);
+}
+
+TEST_CASE("swap_small_intrusive", "[small_unique_ptr]")
+{
+    small_unique_ptr<BaseIntrusive> p1 = make_unique_small<SmallIntrusive>(1);
+    small_unique_ptr<BaseIntrusive> p2 = make_unique_small<SmallIntrusive>(2);
 
     using std::swap;
     swap(p1, p2);
@@ -307,7 +392,28 @@ TEST_CASE("swap_small", "[small_unique_ptr]")
     REQUIRE(p2->value() == 2);
 }
 
-TEST_CASE("swap_constexpr", "[small_unique_ptr]")
+TEST_CASE("swap_mixed_intrusive", "[small_unique_ptr]")
+{
+    using std::swap;
+
+    small_unique_ptr<BaseIntrusive> p1 = make_unique_small<SmallIntrusive>();
+    small_unique_ptr<BaseIntrusive> p2 = make_unique_small<LargeIntrusive>();
+
+    REQUIRE(p1->value() == 32);
+    REQUIRE(p2->value() == 64);
+
+    swap(p1, p2);
+
+    REQUIRE(p1->value() == 64);
+    REQUIRE(p2->value() == 32);
+
+    swap(p1, p2);
+
+    REQUIRE(p1->value() == 32);
+    REQUIRE(p2->value() == 64);
+}
+
+TEST_CASE("constexpr_swap", "[small_unique_ptr]")
 {
     using std::swap;
 
@@ -320,6 +426,7 @@ TEST_CASE("swap_constexpr", "[small_unique_ptr]")
 
         return true;
     }));
+
 
     STATIC_REQUIRE(32 == std::invoke([]
     {
@@ -345,6 +452,37 @@ TEST_CASE("swap_constexpr", "[small_unique_ptr]")
     {
         small_unique_ptr<Base> p1 = make_unique_small<LargeDerived>();
         small_unique_ptr<Base> p2 = make_unique_small<LargeDerived>();
+
+        swap(p1, p2);
+
+        return p2->padding();
+    }));
+
+
+    STATIC_REQUIRE(32 == std::invoke([]
+    {
+        small_unique_ptr<BaseIntrusive> p1 = make_unique_small<SmallIntrusive>();
+        small_unique_ptr<BaseIntrusive> p2 = make_unique_small<LargeIntrusive>();
+
+        swap(p1, p2);
+
+        return p2->padding();
+    }));
+
+    STATIC_REQUIRE(32 == std::invoke([]
+    {
+        small_unique_ptr<BaseIntrusive> p1 = make_unique_small<SmallIntrusive>();
+        small_unique_ptr<BaseIntrusive> p2 = make_unique_small<SmallIntrusive>();
+
+        swap(p1, p2);
+
+        return p2->padding();
+    }));
+
+    STATIC_REQUIRE(64 == std::invoke([]
+    {
+        small_unique_ptr<BaseIntrusive> p1 = make_unique_small<LargeIntrusive>();
+        small_unique_ptr<BaseIntrusive> p2 = make_unique_small<LargeIntrusive>();
 
         swap(p1, p2);
 
@@ -458,17 +596,20 @@ TEST_CASE("abstract_base", "[small_unique_ptr]")
     struct ADerived : ABase { int value() const override { return 12; } };
 
     small_unique_ptr<ABase> p = make_unique_small<ADerived>();
-
     REQUIRE(p->value() == 12);
+
+    small_unique_ptr<const ABase> pc = std::move(p);
+    REQUIRE(pc->value() == 12);
+    REQUIRE(p == nullptr);
 }
 
 TEST_CASE("simple_alignment", "[small_unique_ptr]")
 {
-    small_unique_ptr<SmallPOD> p1 = make_unique_small<SmallPOD>();
-    small_unique_ptr<LargePOD> p2 = make_unique_small<LargePOD>();
+    small_unique_ptr<SmallPOD> ps = make_unique_small<SmallPOD>();
+    small_unique_ptr<LargePOD> pl = make_unique_small<LargePOD>();
 
-    REQUIRE(!(std::bit_cast<std::uintptr_t>(std::addressof(*p1)) % alignof(SmallPOD)));
-    REQUIRE(!(std::bit_cast<std::uintptr_t>(std::addressof(*p2)) % alignof(LargePOD)));
+    REQUIRE((std::bit_cast<std::uintptr_t>(std::addressof(*ps)) % alignof(SmallPOD)) == 0);
+    REQUIRE((std::bit_cast<std::uintptr_t>(std::addressof(*pl)) % alignof(LargePOD)) == 0);
 }
 
 TEST_CASE("poly_alignment", "[small_unique_ptr]")
@@ -478,7 +619,7 @@ TEST_CASE("poly_alignment", "[small_unique_ptr]")
 
     small_unique_ptr<SmallAlign> p = make_unique_small<LargeAlign>();
 
-    REQUIRE(!(std::bit_cast<std::uintptr_t>(std::addressof(*p)) % alignof(LargeAlign)));
+    REQUIRE((std::bit_cast<std::uintptr_t>(std::addressof(*p)) % alignof(LargeAlign)) == 0);
 }
 
 TEST_CASE("const_unique_ptr", "[small_unique_ptr]")
