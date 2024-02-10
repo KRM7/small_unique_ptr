@@ -87,7 +87,7 @@ namespace detail
     {
     private:
         static constexpr std::size_t dynamic_buffer_alignment = small_ptr_size;
-        static constexpr std::size_t static_buffer_alignment  = detail::max(alignof(T*), detail::min(alignof(T), small_ptr_size));
+        static constexpr std::size_t static_buffer_alignment  = detail::min(alignof(T), small_ptr_size);
     public:
         static constexpr std::size_t value = std::has_virtual_destructor_v<T> ? dynamic_buffer_alignment : static_buffer_alignment;
     };
@@ -100,7 +100,7 @@ namespace detail
     struct is_always_heap_allocated
     {
         static constexpr bool value = (sizeof(T) > buffer_size_v<T>) || (alignof(T) > buffer_alignment_v<T>) ||
-                                      (!std::is_abstract_v<T> && !std::is_nothrow_move_constructible_v<T>);
+                                      (!std::is_abstract_v<T> && !std::is_nothrow_move_constructible_v<std::remove_cv_t<T>>);
     };
 
     template<typename T>
@@ -235,7 +235,7 @@ public:
     {
         static_assert(!detail::is_proper_base_of_v<T, U> || std::has_virtual_destructor_v<T>);
 
-        if (!other.is_stack_allocated() || std::is_constant_evaluated())
+        if (!other.is_stack_allocated())
         {
             this->data_ = std::exchange(other.data_, nullptr);
             return;
@@ -260,7 +260,7 @@ public:
     {
         static_assert(!detail::is_proper_base_of_v<T, U> || std::has_virtual_destructor_v<T>);
 
-        if (!other.is_stack_allocated() || std::is_constant_evaluated())
+        if (!other.is_stack_allocated())
         {
             reset(std::exchange(other.data_, nullptr));
             return *this;
@@ -295,7 +295,7 @@ public:
 
     constexpr void swap(small_unique_ptr& other) noexcept
     {
-        if constexpr (is_always_heap_allocated())
+        if constexpr (detail::is_always_heap_allocated_v<T>)
         {
             std::swap(this->data_, other.data_);
         }
@@ -313,13 +313,14 @@ public:
             other.move_buffer_to(temp);
             temp.data_ = temp.buffer(other_offset);
             std::destroy_at(other.data_);
-            this->move_buffer_to(other);
-            std::destroy_at(this->data_);
-            temp.move_buffer_to(*this);
-            std::destroy_at(temp.data_);
 
-            this->data_ = this->buffer(other_offset);
+            this->move_buffer_to(other);
             other.data_ = other.buffer(this_offset);
+            std::destroy_at(this->data_);
+
+            temp.move_buffer_to(*this);
+            this->data_ = this->buffer(other_offset);
+            std::destroy_at(temp.data_);
         }
         else if (!is_stack_allocated() && other.is_stack_allocated())
         {
@@ -331,7 +332,7 @@ public:
         {
             const pointer new_data = other.buffer(this->offsetof_base());
             this->move_buffer_to(other);
-            reset(std::exchange(other.data_, new_data));
+            this->reset(std::exchange(other.data_, new_data));
         }
     }
 
@@ -404,6 +405,11 @@ public:
         return os << p.get();
     }
 
+    constexpr friend void swap(small_unique_ptr& lhs, small_unique_ptr& rhs) noexcept
+    {
+        lhs.swap(rhs);
+    }
+
 private:
     template<typename Base = T>
     constexpr std::ptrdiff_t offsetof_base() const noexcept
@@ -421,12 +427,6 @@ private:
 
     friend struct detail::make_unique_small_impl;
 };
-
-template<typename T>
-constexpr void swap(small_unique_ptr<T>& lhs, small_unique_ptr<T>& rhs) noexcept
-{
-    lhs.swap(rhs);
-}
 
 namespace std
 {
