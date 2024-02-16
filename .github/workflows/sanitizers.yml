@@ -14,7 +14,7 @@ jobs:
             pkgs: clang-15 llvm-15
             
     env:
-      ASAN_OPTIONS: check_initialization_order=1:strict_init_order=1:detect_stack_use_after_return=1:detect_leaks=1
+      ASAN_OPTIONS: check_initialization_order=1:strict_init_order=1:detect_stack_use_after_return=1:detect_leaks=1:detect_invalid_pointer_pairs=2
       UBSAN_OPTIONS: print_stacktrace=1:print_summary=1
       
     defaults:

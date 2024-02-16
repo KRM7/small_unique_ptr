@@ -1,5 +1,5 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
-<RuleSet Name="Rules for GeneticAlgorithm" Description="Code analysis rules for GeneticAlgorithm.vcxproj." ToolsVersion="17.0">
+<RuleSet Name="Rules" Description="Code analysis rules." ToolsVersion="17.0">
   <Include Path="cppcorecheckarithmeticrules.ruleset" Action="Default" />
   <Include Path="cppcorecheckboundsrules.ruleset" Action="Default" />
   <Include Path="cppcorecheckclassrules.ruleset" Action="Default" />

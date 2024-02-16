@@ -116,20 +116,22 @@ namespace detail
 
         pointer buffer(std::ptrdiff_t offset = 0) const noexcept
         {
-            assert(0 <= offset && offset < buffer_size_v<T>);
-            return std::launder(reinterpret_cast<pointer>(std::addressof(buffer_[offset])));
+            return std::launder(reinterpret_cast<pointer>(static_cast<unsigned char*>(buffer_) + offset));
         }
 
         template<typename U>
         void move_buffer_to(small_unique_ptr_base<U>& dst) noexcept
         {
-            move_(this->buffer(), dst.buffer());
+            move_(buffer(), dst.buffer());
             dst.move_ = move_;
         }
 
-        constexpr bool is_stack_allocated() const noexcept { return static_cast<bool>(this->move_); }
+        constexpr bool is_stack_allocated() const noexcept
+        {
+            return static_cast<bool>(move_);
+        }
 
-        alignas(buffer_alignment_v<T>) mutable buffer_t buffer_ = {};
+        alignas(buffer_alignment_v<T>) mutable buffer_t buffer_;
         T* data_      = nullptr;
         move_fn move_ = nullptr;
     };
@@ -152,19 +154,21 @@ namespace detail
 
         pointer buffer(std::ptrdiff_t offset = 0) const noexcept
         {
-            assert(0 <= offset && offset < buffer_size_v<T>);
-            return std::launder(reinterpret_cast<pointer>(std::addressof(buffer_[offset])));
+            return std::launder(reinterpret_cast<pointer>(static_cast<unsigned char*>(buffer_) + offset));
         }
 
         template<typename U>
         void move_buffer_to(small_unique_ptr_base<U>& dst) noexcept
         {
-            std::construct_at(dst.buffer(), std::move(*this->buffer()));
+            std::construct_at(dst.buffer(), std::move(*buffer()));
         }
 
-        constexpr bool is_stack_allocated() const noexcept { return !std::is_constant_evaluated() && (data_ == this->buffer()); }
+        constexpr bool is_stack_allocated() const noexcept
+        {
+            return !std::is_constant_evaluated() && (data_ == buffer());
+        }
 
-        alignas(buffer_alignment_v<T>) mutable buffer_t buffer_ = {};
+        alignas(buffer_alignment_v<T>) mutable buffer_t buffer_;
         T* data_ = nullptr;
     };
 
@@ -177,8 +181,7 @@ namespace detail
 
         pointer buffer(std::ptrdiff_t offset = 0) const noexcept
         {
-            assert(0 <= offset && offset < buffer_size_v<T>);
-            return std::launder(reinterpret_cast<pointer>(std::addressof(buffer_[offset])));
+            return std::launder(reinterpret_cast<pointer>(static_cast<unsigned char*>(buffer_) + offset));
         }
 
         template<typename U>
@@ -194,7 +197,7 @@ namespace detail
             if (std::is_constant_evaluated()) return false;
 
             const volatile unsigned char* data = reinterpret_cast<const volatile unsigned char*>(data_);
-            const volatile unsigned char* buffer_first = std::addressof(this->buffer_[0]);
+            const volatile unsigned char* buffer_first = static_cast<unsigned char*>(buffer_);
             const volatile unsigned char* buffer_last  = buffer_first + buffer_size_v<T>;
 
             assert(reinterpret_cast<std::uintptr_t>(buffer_last) - reinterpret_cast<std::uintptr_t>(buffer_first) == buffer_size_v<T>);
@@ -202,7 +205,7 @@ namespace detail
             return std::less_equal{}(buffer_first, data) && std::less{}(data, buffer_last);
         }
 
-        alignas(buffer_alignment_v<T>) mutable buffer_t buffer_ = {};
+        alignas(buffer_alignment_v<T>) mutable buffer_t buffer_;
         T* data_ = nullptr;
     };
 
@@ -453,7 +456,7 @@ namespace detail
     struct make_unique_small_impl
     {
         template<typename T, typename... Args>
-        static constexpr small_unique_ptr<T> invoke(Args... args)
+        static constexpr small_unique_ptr<T> invoke(Args&&... args)
         noexcept(std::is_nothrow_constructible_v<T, Args...> && !detail::is_always_heap_allocated_v<T>)
         {
             small_unique_ptr<T> ptr;
