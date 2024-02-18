@@ -19,6 +19,7 @@ generally be:
  - 48 for polymorphic types
  - 56 for polymorphic types that implement a virtual `small_unique_ptr_move` method
  - `sizeof(T)` for non-polymophic types, with an upper limit of 56
+ - 56 for array types
 
 The overall size of a `small_unique_ptr<T>` object is:
 
@@ -30,7 +31,7 @@ The interface matches `std::unique_ptr<T>`, except for:
  - There is no `Deleter` template parameter or any of the associated methods
  - Constructors from pointers are not provided except for the nullptr constructor
  - `release()` is not implemented
- - `T` can't be an incomplete type or an array type
+ - `T` can't be an incomplete type
  - There are a couple of extra methods for checking where objects are allocated
 
 Everything is constexpr, but the stack buffer is not used in constant evaluated contexts,
