@@ -148,7 +148,10 @@ TEMPLATE_TEST_CASE("construction_scalar", "[small_unique_ptr]", SmallPOD, LargeP
     STATIC_REQUIRE( std::invoke([]{ (void) small_unique_ptr<const TestType>();        return true; }) );
     STATIC_REQUIRE( std::invoke([]{ (void) small_unique_ptr<TestType>(nullptr);       return true; }) );
     STATIC_REQUIRE( std::invoke([]{ (void) small_unique_ptr<const TestType>(nullptr); return true; }) );
+}
 
+TEMPLATE_TEST_CASE("make_unique_scalar", "[small_unique_ptr]", SmallPOD, LargePOD, Base, SmallDerived, LargeDerived, BaseIntrusive, SmallIntrusive, LargeIntrusive)
+{
     STATIC_REQUIRE( std::invoke([]{ (void) make_unique_small<TestType>();       return true; }) );
     STATIC_REQUIRE( std::invoke([]{ (void) make_unique_small<const TestType>(); return true; }) );
 
@@ -158,15 +161,27 @@ TEMPLATE_TEST_CASE("construction_scalar", "[small_unique_ptr]", SmallPOD, LargeP
     SUCCEED();
 }
 
+TEMPLATE_TEST_CASE("make_unique_for_overwrite_scalar", "[small_unique_ptr]", SmallPOD, LargePOD, Base, SmallDerived, LargeDerived, BaseIntrusive, SmallIntrusive, LargeIntrusive)
+{
+    STATIC_REQUIRE( std::invoke([]{ (void) make_unique_small_for_overwrite<TestType>(); return true; }) );
+
+    (void) make_unique_small_for_overwrite<TestType>();
+
+    SUCCEED();
+}
+
 TEMPLATE_TEST_CASE("construction_array", "[small_unique_ptr]", SmallPOD, LargePOD)
 {
-    STATIC_REQUIRE( std::invoke([]{ (void) small_unique_ptr<TestType[]>();        return true; }) );
-    STATIC_REQUIRE( std::invoke([]{ (void) small_unique_ptr<const TestType[]>();  return true; }) );
-    STATIC_REQUIRE( std::invoke([]{ (void) small_unique_ptr<TestType[]>(nullptr); return true; }) );
-    STATIC_REQUIRE( std::invoke([]{ (void) small_unique_ptr<TestType[]>(nullptr); return true; }) );
+    STATIC_REQUIRE( std::invoke([]{ (void) small_unique_ptr<TestType[]>();              return true; }) );
+    STATIC_REQUIRE( std::invoke([]{ (void) small_unique_ptr<const TestType[]>();        return true; }) );
+    STATIC_REQUIRE( std::invoke([]{ (void) small_unique_ptr<TestType[]>(nullptr);       return true; }) );
+    STATIC_REQUIRE( std::invoke([]{ (void) small_unique_ptr<const TestType[]>(nullptr); return true; }) );
+}
 
-    STATIC_REQUIRE( std::invoke([]{ (void) make_unique_small<TestType[]>(2);       return true; }));
-    STATIC_REQUIRE( std::invoke([]{ (void) make_unique_small<const TestType[]>(2); return true; }));
+TEMPLATE_TEST_CASE("make_unique_array", "[small_unique_ptr]", SmallPOD, LargePOD)
+{
+    STATIC_REQUIRE( std::invoke([]{ (void) make_unique_small<TestType[]>(2);       return true; }) );
+    STATIC_REQUIRE( std::invoke([]{ (void) make_unique_small<const TestType[]>(2); return true; }) );
 
     (void) make_unique_small<TestType[]>(2);
     (void) make_unique_small<const TestType[]>(2);
@@ -176,10 +191,27 @@ TEMPLATE_TEST_CASE("construction_array", "[small_unique_ptr]", SmallPOD, LargePO
     SUCCEED();
 }
 
+TEST_CASE("make_unique_for_overwrite_array", "[small_unique_ptr]")
+{
+    STATIC_REQUIRE( std::invoke([]{ (void) make_unique_small_for_overwrite<SmallPOD[]>(2); return true; }) );
+    STATIC_REQUIRE( std::invoke([]{ (void) make_unique_small_for_overwrite<LargePOD[]>(2); return true; }) );
+
+    (void) make_unique_small_for_overwrite<SmallPOD[]>(2);
+    (void) make_unique_small_for_overwrite<LargePOD[]>(2);
+
+    (void) make_unique_small_for_overwrite<SmallPOD[]>(0);
+    (void) make_unique_small_for_overwrite<LargePOD[]>(0);
+
+    SUCCEED();
+}
+
 TEST_CASE("noexcept_construction", "[small_unique_ptr]")
 {
     STATIC_REQUIRE(noexcept(make_unique_small<SmallDerived>()));
     STATIC_REQUIRE(!noexcept(make_unique_small<LargeDerived>()));
+
+    STATIC_REQUIRE(noexcept(make_unique_small_for_overwrite<SmallDerived>()));
+    STATIC_REQUIRE(!noexcept(make_unique_small_for_overwrite<LargeDerived>()));
 }
 
 TEST_CASE("is_always_heap_allocated", "[small_unique_ptr]")

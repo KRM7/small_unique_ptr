@@ -528,8 +528,7 @@ namespace detail
     struct make_unique_small_impl
     {
         template<typename T, typename... Args>
-        requires(!std::is_array_v<T>)
-        static constexpr small_unique_ptr<T> invoke(Args&&... args)
+        static constexpr small_unique_ptr<T> invoke_scalar(Args&&... args)
         noexcept(std::is_nothrow_constructible_v<T, Args...> && !detail::is_always_heap_allocated_v<T>)
         {
             small_unique_ptr<T> ptr;
@@ -552,8 +551,7 @@ namespace detail
         }
 
         template<typename T>
-        requires(std::is_unbounded_array_v<T>)
-        static constexpr small_unique_ptr<T> invoke(std::size_t count)
+        static constexpr small_unique_ptr<T> invoke_array(std::size_t count)
         {
             small_unique_ptr<T> ptr;
 
@@ -563,8 +561,49 @@ namespace detail
             }
             else if constexpr (!detail::is_always_heap_allocated_v<T>)
             {
-                std::uninitialized_value_construct(ptr.buffer(), ptr.buffer() + detail::buffer_elements_v<T>);
-                ptr.data_ = ptr.buffer();
+                std::uninitialized_value_construct_n(ptr.buffer(), detail::buffer_elements_v<T>);
+                ptr.data_ = std::launder(ptr.buffer());
+            }
+
+            return ptr;
+        }
+
+        template<typename T>
+        static constexpr small_unique_ptr<T> invoke_for_overwrite_scalar()
+        noexcept(std::is_nothrow_default_constructible_v<T> && !detail::is_always_heap_allocated_v<T>)
+        {
+            small_unique_ptr<T> ptr;
+
+            if (detail::is_always_heap_allocated_v<T> || std::is_constant_evaluated())
+            {
+                ptr.data_ = new T;
+            }
+            else if constexpr (!detail::is_always_heap_allocated_v<T> && std::is_polymorphic_v<T> && !detail::has_virtual_move<T>)
+            {
+                ptr.data_ = ::new(static_cast<void*>(ptr.buffer())) std::remove_cv_t<T>;
+                ptr.move_ = detail::move_buffer<std::remove_cv_t<T>>;
+            }
+            else if constexpr (!detail::is_always_heap_allocated_v<T>)
+            {
+                ptr.data_ = ::new(static_cast<void*>(ptr.buffer())) std::remove_cv_t<T>;
+            }
+
+            return ptr;
+        }
+
+        template<typename T>
+        static constexpr small_unique_ptr<T> invoke_for_overwrite_array(std::size_t count)
+        {
+            small_unique_ptr<T> ptr;
+
+            if (detail::is_always_heap_allocated_v<T> || (count > detail::buffer_elements_v<T>) || std::is_constant_evaluated())
+            {
+                ptr.data_ = new std::remove_extent_t<T>[count];
+            }
+            else if constexpr (!detail::is_always_heap_allocated_v<T>)
+            {
+                std::uninitialized_default_construct_n(ptr.buffer(), detail::buffer_elements_v<T>);
+                ptr.data_ = std::launder(ptr.buffer());
             }
 
             return ptr;
@@ -577,13 +616,33 @@ template<typename T, typename... Args>
 [[nodiscard]] constexpr small_unique_ptr<T> make_unique_small(Args&&... args)
 noexcept(std::is_nothrow_constructible_v<T, Args...> && !detail::is_always_heap_allocated_v<T>) requires(!std::is_array_v<T>)
 {
-    return detail::make_unique_small_impl::invoke<T>(std::forward<Args>(args)...);
+    return detail::make_unique_small_impl::invoke_scalar<T>(std::forward<Args>(args)...);
 }
 
 template<typename T>
 [[nodiscard]] constexpr small_unique_ptr<T> make_unique_small(std::size_t count) requires(std::is_unbounded_array_v<T>)
 {
-    return detail::make_unique_small_impl::invoke<T>(count);
+    return detail::make_unique_small_impl::invoke_array<T>(count);
 }
+
+template<typename T, typename... Args>
+[[nodiscard]] constexpr small_unique_ptr<T> make_unique_small(Args&&...) requires(std::is_bounded_array_v<T>) = delete;
+
+
+template<typename T>
+[[nodiscard]] constexpr small_unique_ptr<T> make_unique_small_for_overwrite()
+noexcept(std::is_nothrow_default_constructible_v<T> && !detail::is_always_heap_allocated_v<T>) requires(!std::is_array_v<T>)
+{
+    return detail::make_unique_small_impl::invoke_for_overwrite_scalar<T>();
+}
+
+template<typename T>
+[[nodiscard]] constexpr small_unique_ptr<T> make_unique_small_for_overwrite(std::size_t count) requires(std::is_unbounded_array_v<T>)
+{
+    return detail::make_unique_small_impl::invoke_for_overwrite_array<T>(count);
+}
+
+template<typename T, typename... Args>
+[[nodiscard]] constexpr small_unique_ptr<T> make_unique_small_for_overwrite(Args&&...) requires(std::is_bounded_array_v<T>) = delete;
 
 #endif // !SMALL_UNIQUE_PTR_HPP
