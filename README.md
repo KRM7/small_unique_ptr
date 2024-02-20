@@ -4,31 +4,32 @@
 A constexpr `unique_ptr` implementation in C++20 with small object optimization.
 
 ```cpp
-small_unique_ptr<Base> p = make_unique_small<Derived>();
+smp::small_unique_ptr<Base> p = smp::make_unique_small<Derived>();
 ```
 
 Objects created with `make_unique_small<T>` are allocated on the stack if:
 
  - Their size is not greater than the size of the internal stack buffer
- - Their required alignment is not greater than 64
+ - Their alignment is not greater than the alignment of the stack buffer
  - Their move constructor is `noexcept`
 
-The size of the stack buffer is architecture dependent, but on 64 bit architectures it will
-generally be:
+The size of the stack buffer depends on the architecture and the overall size of the
+`small_unique_ptr` object, but the default values on 64 bit architectures will typically be:
 
  - 48 for polymorphic types
  - 56 for polymorphic types that implement a virtual `small_unique_ptr_move` method
  - `sizeof(T)` for non-polymophic types, with an upper limit of 56
- - 56 for array types
+ - 56 for array types (rounded down to a multiple of the element size)
 
-The overall size of a `small_unique_ptr<T>` object is:
+The overall size of a `small_unique_ptr<T, Size>` object for a polymorphic type is:
 
- - 64 if `T` may be allocated in the stack buffer
+ - `Size` if `T` may be allocated in the stack buffer (64 by default)
  - `sizeof(T*)` otherwise
 
-The interface matches `std::unique_ptr<T>`, except for:
+The interface matches `std::unique_ptr`, except for:
 
  - There is no `Deleter` template parameter or any of the associated methods
+ - There is a `Size` template parameter that specifies the (maximum) size of the `small_unique_ptr` object
  - Constructors from pointers are not provided except for the nullptr constructor
  - `release()` is not implemented
  - `T` can't be an incomplete type
@@ -36,7 +37,7 @@ The interface matches `std::unique_ptr<T>`, except for:
 
 Everything is constexpr, but the stack buffer is not used in constant evaluated contexts,
 so any constexpr usage is subject to the same transient allocation requirements that a constexpr
-`std::unique_ptr<T>` would be.
+`std::unique_ptr` would be.
 
 --------------------------------------------------------------------------------------------------
 
@@ -59,15 +60,15 @@ public:
 
     template<typename F>
     requires(!std::is_same_v<F, move_only_function> && std::is_invocable_r_v<Ret, F&, Args...>)
-    constexpr move_only_function(F f) noexcept(noexcept(make_unique_small<Impl<F>>(std::move(f)))) :
-        fptr_(make_unique_small<Impl<F>>(std::move(f)))
+    constexpr move_only_function(F f) noexcept(noexcept(smp::make_unique_small<Impl<F>>(std::move(f)))) :
+        fptr_(smp::make_unique_small<Impl<F>>(std::move(f)))
     {}
 
     template<typename F>
     requires(!std::is_same_v<F, move_only_function> && std::is_invocable_r_v<Ret, F&, Args...>)
-    constexpr move_only_function& operator=(F f) noexcept(noexcept(make_unique_small<Impl<F>>(std::move(f))))
+    constexpr move_only_function& operator=(F f) noexcept(noexcept(smp::make_unique_small<Impl<F>>(std::move(f))))
     {
-        fptr_ = make_unique_small<Impl<F>>(std::move(f));
+        fptr_ = smp::make_unique_small<Impl<F>>(std::move(f));
         return *this;
     }
 
@@ -114,7 +115,7 @@ private:
         Callable func_;
     };
 
-    small_unique_ptr<ImplBase> fptr_ = nullptr;
+    smp::small_unique_ptr<ImplBase> fptr_ = nullptr;
 };
 ```
 </details>

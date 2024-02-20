@@ -8,6 +8,7 @@
 #include <utility>
 #include <cstdint>
 
+using namespace smp;
 
 struct SmallPOD { char dummy_; };
 struct LargePOD { char dummy_[128]; };
@@ -90,7 +91,7 @@ TEST_CASE("object_layout", "[small_unique_ptr]")
     STATIC_REQUIRE(std::is_standard_layout_v<small_unique_ptr<LargeIntrusive>>);
 }
 
-TEST_CASE("object_size", "[small_unique_ptr]")
+TEST_CASE("object_size_default", "[small_unique_ptr]")
 {
     STATIC_REQUIRE(sizeof(small_unique_ptr<SmallPOD>) <= 2 * sizeof(void*));
     STATIC_REQUIRE(sizeof(small_unique_ptr<LargePOD>) == sizeof(void*));
@@ -99,25 +100,36 @@ TEST_CASE("object_size", "[small_unique_ptr]")
     STATIC_REQUIRE(alignof(small_unique_ptr<LargePOD>) == alignof(void*));
 
 
-    STATIC_REQUIRE(sizeof(small_unique_ptr<SmallPOD[]>) == detail::small_ptr_size);
+    STATIC_REQUIRE(sizeof(small_unique_ptr<SmallPOD[]>) == detail::default_small_ptr_size);
     STATIC_REQUIRE(sizeof(small_unique_ptr<LargePOD[]>) == sizeof(void*));
 
     STATIC_REQUIRE(alignof(small_unique_ptr<SmallPOD[]>) == alignof(void*));
     STATIC_REQUIRE(alignof(small_unique_ptr<LargePOD[]>) == alignof(void*));
 
 
-    STATIC_REQUIRE(sizeof(small_unique_ptr<SmallDerived>) == detail::small_ptr_size);
+    STATIC_REQUIRE(sizeof(small_unique_ptr<SmallDerived>) == detail::default_small_ptr_size);
     STATIC_REQUIRE(sizeof(small_unique_ptr<LargeDerived>) == sizeof(void*));
 
-    STATIC_REQUIRE(alignof(small_unique_ptr<SmallDerived>) == detail::small_ptr_size);
+    STATIC_REQUIRE(alignof(small_unique_ptr<SmallDerived>) == detail::default_small_ptr_size);
     STATIC_REQUIRE(alignof(small_unique_ptr<LargeDerived>) == alignof(void*));
 
 
-    STATIC_REQUIRE(sizeof(small_unique_ptr<SmallIntrusive>) == detail::small_ptr_size);
+    STATIC_REQUIRE(sizeof(small_unique_ptr<SmallIntrusive>) == detail::default_small_ptr_size);
     STATIC_REQUIRE(sizeof(small_unique_ptr<LargeIntrusive>) == sizeof(void*));
 
-    STATIC_REQUIRE(alignof(small_unique_ptr<SmallIntrusive>) == detail::small_ptr_size);
+    STATIC_REQUIRE(alignof(small_unique_ptr<SmallIntrusive>) == detail::default_small_ptr_size);
     STATIC_REQUIRE(alignof(small_unique_ptr<LargeIntrusive>) == alignof(void*));
+}
+
+TEMPLATE_TEST_CASE("object_size_custom", "[small_unique_ptr]", Base, BaseIntrusive)
+{
+    STATIC_REQUIRE(sizeof(small_unique_ptr<TestType, 24>) == 24);
+    STATIC_REQUIRE(sizeof(small_unique_ptr<TestType, 32>) == 32);
+    STATIC_REQUIRE(sizeof(small_unique_ptr<TestType, 40>) == 40);
+    STATIC_REQUIRE(sizeof(small_unique_ptr<TestType, 48>) == 48);
+    STATIC_REQUIRE(sizeof(small_unique_ptr<TestType, 56>) == 56);
+    STATIC_REQUIRE(sizeof(small_unique_ptr<TestType, 64>) == 64);
+    STATIC_REQUIRE(sizeof(small_unique_ptr<TestType, 128>) == 128);
 }
 
 TEST_CASE("stack_buffer_size", "[small_unique_ptr]")
@@ -140,6 +152,14 @@ TEST_CASE("stack_buffer_size_archdep", "[small_unique_ptr][!mayfail]")
     REQUIRE(small_unique_ptr<SmallIntrusive>::stack_buffer_size() == 56);
 
     REQUIRE(small_unique_ptr<SmallPOD[]>::stack_buffer_size() == 56);
+}
+
+TEST_CASE("stack_array_size_archdep", "[small_unique_ptr][!mayfail]")
+{
+    REQUIRE(small_unique_ptr<SmallPOD[]>::stack_array_size() == 56);
+    REQUIRE(small_unique_ptr<LargePOD[]>::stack_array_size() == 0);
+
+    REQUIRE(small_unique_ptr<SmallDerived[]>::stack_array_size() > 0);
 }
 
 TEMPLATE_TEST_CASE("construction_scalar", "[small_unique_ptr]", SmallPOD, LargePOD, Base, SmallDerived, LargeDerived, BaseIntrusive, SmallIntrusive, LargeIntrusive)
