@@ -14,6 +14,7 @@
 #include <concepts>
 #include <utility>
 #include <cstddef>
+#include <cstdint>
 #include <cassert>
 
 namespace smp::detail
