@@ -16,14 +16,14 @@ Objects created with `make_unique_small<T>` are allocated on the stack if:
 The size of the stack buffer depends on the architecture and the overall size of the
 `small_unique_ptr` object, but the default values on 64 bit architectures will typically be:
 
- - 48 for polymorphic types
- - 56 for polymorphic types that implement a virtual `small_unique_ptr_move` method
- - `sizeof(T)` for non-polymophic types, with an upper limit of 56
- - 56 for array types (rounded down to a multiple of the element size)
+ - 48 bytes for polymorphic types
+ - 56 bytes for polymorphic types that implement a virtual `small_unique_ptr_move` method
+ - `sizeof(T)` for non-polymophic types, with an upper limit of 56 bytes
+ - 56 bytes for array types (rounded down to a multiple of the element size)
 
 The overall size of a `small_unique_ptr<T, Size>` object for a polymorphic type is:
 
- - `Size` if `T` may be allocated in the stack buffer (64 by default)
+ - `Size` if `T` may be allocated in the stack buffer (64 bytes by default)
  - `sizeof(T*)` otherwise
 
 The interface matches `std::unique_ptr`, except for:
@@ -41,11 +41,10 @@ so any constexpr usage is subject to the same transient allocation requirements 
 
 --------------------------------------------------------------------------------------------------
 
-<details>
-<summary>
-Example of a simplified <code>move_only_function</code> implementation with small object
-optimization using <code>small_unique_ptr</code>
-</summary>
+#### Usage example
+
+Example of a simplified `move_only_function` implementation with small object
+optimization using `small_unique_ptr`:
 
 ```cpp
 template<typename...>
@@ -118,4 +117,4 @@ private:
     smp::small_unique_ptr<ImplBase> fptr_ = nullptr;
 };
 ```
-</details>
+
