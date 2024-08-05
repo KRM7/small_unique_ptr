@@ -20,10 +20,13 @@
 namespace smp::detail
 {
     template<typename T>
-    constexpr const T& min(const T& left, const T& right) { return (left < right) ? left : right; }
+    constexpr const T& min(const T& left, const T& right) noexcept { return (left < right) ? left : right; }
 
     template<typename T>
-    constexpr const T& max(const T& left, const T& right) { return (left < right) ? right : left; }
+    constexpr const T& max(const T& left, const T& right) noexcept { return (left < right) ? right : left; }
+
+    template<std::integral T>
+    constexpr T max_pow2_factor(T n) noexcept { return n & (~n + 1); }
 
 
     using move_fn = void(*)(void* src, void* dst) noexcept;
@@ -73,10 +76,22 @@ namespace smp::detail
         static constexpr std::size_t value = std::has_virtual_destructor_v<T> ? dynamic_buffer_size : static_buffer_size;
     };
 
+    template<typename T>
+    struct buffer_size<T, sizeof(void*)>
+    {
+        static constexpr std::size_t value = 0;
+    };
+
     template<typename T, std::size_t small_ptr_size>
     struct buffer_size<T[], small_ptr_size>
     {
         static constexpr std::size_t value = small_ptr_size - sizeof(T*);
+    };
+
+    template<typename T>
+    struct buffer_size<T[], sizeof(void*)>
+    {
+        static constexpr std::size_t value = 0;
     };
 
     template<typename T, std::size_t small_ptr_size>
@@ -87,8 +102,8 @@ namespace smp::detail
     struct buffer_alignment
     {
     private:
-        static constexpr std::size_t dynamic_buffer_alignment = std::gcd(std::bit_floor(small_ptr_size), small_ptr_size);
-        static constexpr std::size_t static_buffer_alignment  = std::gcd(std::bit_floor(min(alignof(T), small_ptr_size)), min(alignof(T), small_ptr_size));
+        static constexpr std::size_t dynamic_buffer_alignment = detail::max_pow2_factor(small_ptr_size);
+        static constexpr std::size_t static_buffer_alignment  = detail::max_pow2_factor(detail::min(alignof(T), small_ptr_size));
     public:
         static constexpr std::size_t value = std::has_virtual_destructor_v<T> ? dynamic_buffer_alignment : static_buffer_alignment;
     };
@@ -119,6 +134,7 @@ namespace smp::detail
 
         pointer buffer(std::ptrdiff_t offset = 0) const noexcept
         {
+            assert(offset <= sizeof(buffer_t));
             return reinterpret_cast<pointer>(static_cast<unsigned char*>(buffer_) + offset);
         }
 
@@ -187,6 +203,7 @@ namespace smp::detail
 
         pointer buffer(std::ptrdiff_t offset = 0) const noexcept
         {
+            assert(offset <= sizeof(buffer_t));
             return reinterpret_cast<pointer>(static_cast<unsigned char*>(buffer_) + offset);
         }
 
@@ -206,7 +223,8 @@ namespace smp::detail
             auto* buffer_first = static_cast<const volatile unsigned char*>(buffer_);
             auto* buffer_last  = buffer_first + buffer_size_v<T, Size>;
 
-            assert(reinterpret_cast<std::uintptr_t>(buffer_last) - reinterpret_cast<std::uintptr_t>(buffer_first) == (buffer_size_v<T, Size>));
+            assert(reinterpret_cast<std::uintptr_t>(buffer_last) - reinterpret_cast<std::uintptr_t>(buffer_first) == (buffer_size_v<T, Size>) &&
+                   "Linear address space assumed for the stack buffer.");
 
             return std::less_equal{}(buffer_first, data) && std::less{}(data, buffer_last);
         }
@@ -257,9 +275,9 @@ namespace smp
     class small_unique_ptr : private detail::small_unique_ptr_base<T, Size>
     {
     public:
-        static_assert(!std::is_bounded_array_v<T>, "Only unbounded array types are supported.");
-        static_assert(Size >= 2 * sizeof(T*), "The size must be at least the size of 2 pointers.");
-        static_assert(Size % sizeof(T*) == 0, "The size must be a multiple of the size of a pointer.");
+        static_assert(!std::is_bounded_array_v<T>, "Bounded array types are not supported.");
+        static_assert(Size >= sizeof(T*),   "Size must be at least the size of a pointer.");
+        static_assert(!(Size % sizeof(T*)), "Size must be a multiple of the size of a pointer.");
 
         using element_type = std::remove_extent_t<T>;
         using pointer      = std::remove_extent_t<T>*;
@@ -275,7 +293,12 @@ namespace smp
         {}
 
         template<typename U>
-        constexpr small_unique_ptr(small_unique_ptr<U, Size>&& other, constructor_tag_t = {}) noexcept
+        constexpr small_unique_ptr(small_unique_ptr<U, Size>&& other) noexcept :
+            small_unique_ptr(std::move(other), constructor_tag_t{})
+        {}
+
+        template<typename U>
+        constexpr small_unique_ptr(small_unique_ptr<U, Size>&& other, constructor_tag_t) noexcept
         {
             static_assert(!detail::is_proper_base_of_v<T, U> || std::has_virtual_destructor_v<T>);
 
@@ -333,8 +356,8 @@ namespace smp
         constexpr void reset(pointer new_data = pointer{}) noexcept
         {
             destroy();
-            if constexpr (requires { small_unique_ptr::move_; }) this->move_ = nullptr;
             this->data_ = new_data;
+            if constexpr (requires { small_unique_ptr::move_; }) this->move_ = nullptr;
         }
 
         constexpr void swap(small_unique_ptr& other) noexcept
@@ -368,18 +391,18 @@ namespace smp
         }
 
         [[nodiscard]]
-        pointer release() noexcept = delete;
-
-        [[nodiscard]]
-        static constexpr bool is_always_heap_allocated() noexcept
-        {
-            return detail::is_always_heap_allocated_v<T, Size>;
-        }
+        constexpr pointer release() noexcept = delete;
 
         [[nodiscard]]
         constexpr bool is_stack_allocated() const noexcept
         {
             return small_unique_ptr::small_unique_ptr_base::is_stack_allocated();
+        }
+
+        [[nodiscard]]
+        static constexpr bool is_always_heap_allocated() noexcept
+        {
+            return detail::is_always_heap_allocated_v<T, Size>;
         }
 
         [[nodiscard]]
@@ -435,7 +458,7 @@ namespace smp
 
         constexpr std::strong_ordering operator<=>(std::nullptr_t) const noexcept
         {
-            return this->data_ <=> pointer{ nullptr };
+            return std::compare_three_way{}(this->data_, pointer{ nullptr });
         }
 
         template<typename U>
@@ -447,7 +470,7 @@ namespace smp
         template<typename U>
         constexpr std::strong_ordering operator<=>(const small_unique_ptr<U, Size>& rhs) const noexcept
         {
-            return this->data_ <=> rhs.data_;
+            return std::compare_three_way{}(this->data_, rhs.data_);
         }
 
         template<typename CharT, typename Traits>

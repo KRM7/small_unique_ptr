@@ -123,6 +123,8 @@ TEST_CASE("object_size_default", "[small_unique_ptr]")
 
 TEMPLATE_TEST_CASE("object_size_custom", "[small_unique_ptr]", Base, BaseIntrusive)
 {
+    STATIC_REQUIRE(sizeof(small_unique_ptr<TestType, 8>) == 8);
+    STATIC_REQUIRE(sizeof(small_unique_ptr<TestType, 16>) <= 16); // Base will be always heaps allocated on 64 bit arch
     STATIC_REQUIRE(sizeof(small_unique_ptr<TestType, 24>) == 24);
     STATIC_REQUIRE(sizeof(small_unique_ptr<TestType, 32>) == 32);
     STATIC_REQUIRE(sizeof(small_unique_ptr<TestType, 40>) == 40);
@@ -130,6 +132,30 @@ TEMPLATE_TEST_CASE("object_size_custom", "[small_unique_ptr]", Base, BaseIntrusi
     STATIC_REQUIRE(sizeof(small_unique_ptr<TestType, 56>) == 56);
     STATIC_REQUIRE(sizeof(small_unique_ptr<TestType, 64>) == 64);
     STATIC_REQUIRE(sizeof(small_unique_ptr<TestType, 128>) == 128);
+}
+
+TEMPLATE_TEST_CASE("object_alignment_custom", "[small_unique_ptr]", Base, BaseIntrusive)
+{
+    STATIC_REQUIRE(alignof(small_unique_ptr<TestType, 8>) == 8);
+    STATIC_REQUIRE(alignof(small_unique_ptr<TestType, 16>) <= 16); // Base will be always heaps allocated on 64 bit arch
+    STATIC_REQUIRE(alignof(small_unique_ptr<TestType, 32>) == 32);
+    STATIC_REQUIRE(alignof(small_unique_ptr<TestType, 64>) == 64);
+    STATIC_REQUIRE(alignof(small_unique_ptr<TestType, 128>) == 128);
+}
+
+TEST_CASE("object_alignment_custom_pod", "[small_unique_ptr]")
+{
+    STATIC_REQUIRE(alignof(small_unique_ptr<SmallPOD, 8>) == alignof(SmallPOD*));
+    STATIC_REQUIRE(alignof(small_unique_ptr<SmallPOD, 16>) == alignof(SmallPOD*));
+    STATIC_REQUIRE(alignof(small_unique_ptr<SmallPOD, 32>) == alignof(SmallPOD*));
+    STATIC_REQUIRE(alignof(small_unique_ptr<SmallPOD, 64>) == alignof(SmallPOD*));
+    STATIC_REQUIRE(alignof(small_unique_ptr<SmallPOD, 128>) == alignof(SmallPOD*));
+
+    STATIC_REQUIRE(alignof(small_unique_ptr<SmallPOD[], 8>) == alignof(SmallPOD*));
+    STATIC_REQUIRE(alignof(small_unique_ptr<SmallPOD[], 16>) == alignof(SmallPOD*));
+    STATIC_REQUIRE(alignof(small_unique_ptr<SmallPOD[], 32>) == alignof(SmallPOD*));
+    STATIC_REQUIRE(alignof(small_unique_ptr<SmallPOD[], 64>) == alignof(SmallPOD*));
+    STATIC_REQUIRE(alignof(small_unique_ptr<SmallPOD[], 128>) == alignof(SmallPOD*));
 }
 
 TEST_CASE("stack_buffer_size", "[small_unique_ptr]")
