@@ -4,14 +4,22 @@ on: push
 
 jobs:
   build:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
+    container:
+      image: ubuntu:24.04
     strategy:
       fail-fast: false
       matrix:
         sanitizer: [ address, undefined ]
         compiler: [
             { cxx: clang++-15, pkgs: clang-15 },
-            { cxx: g++-11, pkgs: g++-11 }
+            { cxx: clang++-16, pkgs: clang-16 },
+            { cxx: clang++-17, pkgs: clang-17 },
+            { cxx: clang++-18, pkgs: clang-18 },
+            { cxx: g++-11, pkgs: g++-11 },
+            { cxx: g++-12, pkgs: g++-12 },
+            { cxx: g++-13, pkgs: g++-13 },
+            { cxx: g++-14, pkgs: g++-14 }
         ]
 
     env:
@@ -30,16 +38,16 @@ jobs:
       uses: actions/checkout@v4
 
     - name: setup-compiler
-      run: sudo apt update && sudo apt install -y ${{ matrix.compiler.pkgs }}
+      run: apt update && apt install --allow-downgrades -y git cmake ${{ matrix.compiler.pkgs }}
 
     - name: setup-catch
-      run: sudo bash ./install_catch.sh -DCMAKE_CXX_COMPILER=${{ matrix.compiler.cxx }}
+      run: bash ./install_catch.sh -DCMAKE_CXX_COMPILER=${{ matrix.compiler.cxx }}
 
     - name: setup-build
-      run: sudo cmake .. -DCMAKE_CXX_COMPILER=${{ matrix.compiler.cxx }} -DCMAKE_CXX_FLAGS="-fsanitize=${{ matrix.sanitizer }} -g -fno-omit-frame-pointer"
+      run: cmake .. -DCMAKE_CXX_COMPILER=${{ matrix.compiler.cxx }} -DCMAKE_CXX_FLAGS="-fsanitize=${{ matrix.sanitizer }} -g -fno-omit-frame-pointer"
 
     - name: build
-      run: sudo cmake --build .
+      run: cmake --build .
     
     - name: run-tests
-      run: sudo ctest --output-on-failure --schedule-random
+      run: ctest --output-on-failure --schedule-random

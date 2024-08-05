@@ -7,7 +7,7 @@ cmake --version
 BUILD_DIR=$(dirname $(realpath "$0"))/../build
 echo -e "\nThe build directory is ${BUILD_DIR}.\n"
 
-git clone -b v3.3.0 https://github.com/catchorg/Catch2.git $BUILD_DIR/Catch2
+git clone --depth=1 --branch v3.6.0 https://github.com/catchorg/Catch2.git $BUILD_DIR/Catch2
 CATCH_BUILD_DIR=$BUILD_DIR/Catch2/build
 echo -e "\nThe Catch build directory is ${CATCH_BUILD_DIR}.\n"
 
