@@ -124,7 +124,7 @@ TEST_CASE("object_size_default", "[small_unique_ptr]")
 TEMPLATE_TEST_CASE("object_size_custom", "[small_unique_ptr]", Base, BaseIntrusive)
 {
     STATIC_REQUIRE(sizeof(small_unique_ptr<TestType, 8>) == 8);
-    STATIC_REQUIRE(sizeof(small_unique_ptr<TestType, 16>) <= 16); // Base will be always heaps allocated on 64 bit arch
+    STATIC_REQUIRE(sizeof(small_unique_ptr<TestType, 16>) <= 16); // Base will be always heap allocated on 64 bit arch
     STATIC_REQUIRE(sizeof(small_unique_ptr<TestType, 24>) == 24);
     STATIC_REQUIRE(sizeof(small_unique_ptr<TestType, 32>) == 32);
     STATIC_REQUIRE(sizeof(small_unique_ptr<TestType, 40>) == 40);
@@ -134,17 +134,23 @@ TEMPLATE_TEST_CASE("object_size_custom", "[small_unique_ptr]", Base, BaseIntrusi
     STATIC_REQUIRE(sizeof(small_unique_ptr<TestType, 128>) == 128);
 }
 
-TEMPLATE_TEST_CASE("object_alignment_custom", "[small_unique_ptr]", Base, BaseIntrusive)
+TEMPLATE_TEST_CASE("object_align_custom", "[small_unique_ptr]", Base, BaseIntrusive)
 {
     STATIC_REQUIRE(alignof(small_unique_ptr<TestType, 8>) == 8);
-    STATIC_REQUIRE(alignof(small_unique_ptr<TestType, 16>) <= 16); // Base will be always heaps allocated on 64 bit arch
+    STATIC_REQUIRE(alignof(small_unique_ptr<TestType, 16>) <= 16); // Base will be always heap allocated on 64 bit arch
+    STATIC_REQUIRE(alignof(small_unique_ptr<TestType, 24>) == 8);
     STATIC_REQUIRE(alignof(small_unique_ptr<TestType, 32>) == 32);
+    STATIC_REQUIRE(alignof(small_unique_ptr<TestType, 40>) == 8);
+    STATIC_REQUIRE(alignof(small_unique_ptr<TestType, 48>) == 16);
+    STATIC_REQUIRE(alignof(small_unique_ptr<TestType, 56>) == 8);
     STATIC_REQUIRE(alignof(small_unique_ptr<TestType, 64>) == 64);
     STATIC_REQUIRE(alignof(small_unique_ptr<TestType, 128>) == 128);
 }
 
-TEST_CASE("object_alignment_custom_pod", "[small_unique_ptr]")
+TEST_CASE("object_align_custom_pod", "[small_unique_ptr]")
 {
+    static_assert(alignof(SmallPOD) <= alignof(SmallPOD*));
+
     STATIC_REQUIRE(alignof(small_unique_ptr<SmallPOD, 8>) == alignof(SmallPOD*));
     STATIC_REQUIRE(alignof(small_unique_ptr<SmallPOD, 16>) == alignof(SmallPOD*));
     STATIC_REQUIRE(alignof(small_unique_ptr<SmallPOD, 32>) == alignof(SmallPOD*));
@@ -166,32 +172,37 @@ TEST_CASE("stack_buffer_size", "[small_unique_ptr]")
     STATIC_REQUIRE(small_unique_ptr<SmallPOD[]>::stack_buffer_size() != 0);
     STATIC_REQUIRE(small_unique_ptr<LargePOD[]>::stack_buffer_size() == 0);
 
-    STATIC_REQUIRE(small_unique_ptr<LargeDerived>::stack_buffer_size() == 0);
+    STATIC_REQUIRE(small_unique_ptr<Base>::stack_buffer_size()          != 0);
+    STATIC_REQUIRE(small_unique_ptr<BaseIntrusive>::stack_buffer_size() != 0);
+
+    STATIC_REQUIRE(small_unique_ptr<LargeDerived>::stack_buffer_size()   == 0);
     STATIC_REQUIRE(small_unique_ptr<LargeIntrusive>::stack_buffer_size() == 0);
 
+    STATIC_REQUIRE(small_unique_ptr<BaseIntrusive>::stack_buffer_size() > small_unique_ptr<Base>::stack_buffer_size());
     STATIC_REQUIRE(small_unique_ptr<SmallIntrusive>::stack_buffer_size() > small_unique_ptr<SmallDerived>::stack_buffer_size());
+
+    CHECKED_IF(sizeof(void*) == 8)
+    {
+        REQUIRE(small_unique_ptr<Base>::stack_buffer_size()          == 48);
+        REQUIRE(small_unique_ptr<BaseIntrusive>::stack_buffer_size() == 56);
+
+        REQUIRE(small_unique_ptr<SmallDerived>::stack_buffer_size()   == 48);
+        REQUIRE(small_unique_ptr<SmallIntrusive>::stack_buffer_size() == 56);
+
+        REQUIRE(small_unique_ptr<SmallPOD[]>::stack_buffer_size() == 56);
+
+        REQUIRE(small_unique_ptr<SmallPOD[]>::stack_array_size() == 56);
+        REQUIRE(small_unique_ptr<LargePOD[]>::stack_array_size() == 0);
+
+        REQUIRE(small_unique_ptr<SmallDerived[]>::stack_array_size() > 0);
+    }
 }
 
-TEST_CASE("stack_buffer_size_archdep", "[small_unique_ptr][!mayfail]")
-{
-    REQUIRE(small_unique_ptr<SmallDerived>::stack_buffer_size() == 48);
-    REQUIRE(small_unique_ptr<SmallIntrusive>::stack_buffer_size() == 56);
-
-    REQUIRE(small_unique_ptr<SmallPOD[]>::stack_buffer_size() == 56);
-}
-
-TEST_CASE("stack_array_size_archdep", "[small_unique_ptr][!mayfail]")
-{
-    REQUIRE(small_unique_ptr<SmallPOD[]>::stack_array_size() == 56);
-    REQUIRE(small_unique_ptr<LargePOD[]>::stack_array_size() == 0);
-
-    REQUIRE(small_unique_ptr<SmallDerived[]>::stack_array_size() > 0);
-}
-
-TEMPLATE_TEST_CASE("construction_scalar", "[small_unique_ptr]", SmallPOD, LargePOD, Base, SmallDerived, LargeDerived, BaseIntrusive, SmallIntrusive, LargeIntrusive)
+TEMPLATE_TEST_CASE("construct_scalar", "[small_unique_ptr]", SmallPOD, LargePOD, Base, SmallDerived, LargeDerived, BaseIntrusive, SmallIntrusive, LargeIntrusive)
 {
     STATIC_REQUIRE( std::invoke([]{ (void) small_unique_ptr<TestType>();              return true; }) );
     STATIC_REQUIRE( std::invoke([]{ (void) small_unique_ptr<const TestType>();        return true; }) );
+
     STATIC_REQUIRE( std::invoke([]{ (void) small_unique_ptr<TestType>(nullptr);       return true; }) );
     STATIC_REQUIRE( std::invoke([]{ (void) small_unique_ptr<const TestType>(nullptr); return true; }) );
 }
@@ -220,6 +231,7 @@ TEMPLATE_TEST_CASE("construction_array", "[small_unique_ptr]", SmallPOD, LargePO
 {
     STATIC_REQUIRE( std::invoke([]{ (void) small_unique_ptr<TestType[]>();              return true; }) );
     STATIC_REQUIRE( std::invoke([]{ (void) small_unique_ptr<const TestType[]>();        return true; }) );
+
     STATIC_REQUIRE( std::invoke([]{ (void) small_unique_ptr<TestType[]>(nullptr);       return true; }) );
     STATIC_REQUIRE( std::invoke([]{ (void) small_unique_ptr<const TestType[]>(nullptr); return true; }) );
 }
