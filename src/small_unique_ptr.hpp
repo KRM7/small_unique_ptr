@@ -7,8 +7,6 @@
 #include <memory>
 #include <iosfwd>
 #include <functional>
-#include <numeric>
-#include <bit>
 #include <new>
 #include <type_traits>
 #include <concepts>
