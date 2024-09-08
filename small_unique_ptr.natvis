@@ -1,0 +1,13 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<AutoVisualizer xmlns="http://schemas.microsoft.com/vstudio/debugger/natvis/2010">
+
+<Type Name="smp::small_unique_ptr&lt;*,*&gt;">
+  <SmartPointer Usage="Minimal">data_</SmartPointer>
+  <DisplayString Condition="data_ == 0">empty</DisplayString>
+  <DisplayString Condition="data_ != 0">{{ small_unique_ptr { *data_ } }}</DisplayString>
+  <Expand>
+	  <Item Name="[ptr]">data_</Item>
+  </Expand>
+</Type>
+
+</AutoVisualizer>
