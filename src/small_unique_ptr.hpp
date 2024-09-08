@@ -182,7 +182,7 @@ namespace smp::detail
 
         constexpr bool is_stack_allocated() const noexcept
         {
-            return !std::is_constant_evaluated() && (data_ == buffer());
+            return !std::is_constant_evaluated() && data_;
         }
 
         constexpr small_unique_ptr_base() noexcept {}
