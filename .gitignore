@@ -10,3 +10,5 @@ out/
 build/*
 !build/*.sh
 *.exe
+
+.cache/

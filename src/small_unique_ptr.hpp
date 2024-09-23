@@ -51,14 +51,45 @@ namespace smp::detail
     inline constexpr bool is_nothrow_dereferenceable_v = is_nothrow_dereferenceable<T>::value;
 
 
+    template<typename T, typename U>
+    struct is_same_unqualified : std::is_same<std::remove_cv_t<T>, std::remove_cv_t<U>> {};
+
+    template<typename T, typename U>
+    inline constexpr bool is_same_unqualified_v = is_same_unqualified<T, U>::value;
+
+    
+    template<typename T>
+    struct cv_qual_rank : std::integral_constant<std::size_t, std::is_const_v<T> + std::is_volatile_v<T>> {};
+
+    template<typename T>
+    inline constexpr std::size_t cv_qual_rank_v = cv_qual_rank<T>::value;
+
+
+    template<typename T, typename U>
+    struct is_less_cv_qualified : std::bool_constant<cv_qual_rank_v<T> < cv_qual_rank_v<U>> {};
+
+    template<typename T, typename U>
+    inline constexpr bool is_less_cv_qualified_v = is_less_cv_qualified<T, U>::value;
+
+
     template<typename Base, typename Derived>
     struct is_proper_base_of :
         std::conjunction<std::is_base_of<std::remove_cv_t<Base>, std::remove_cv_t<Derived>>,
-                         std::negation<std::is_same<std::remove_cv_t<Base>, std::remove_cv_t<Derived>>>>
+                         std::negation<detail::is_same_unqualified<Base, Derived>>>
     {};
 
     template<typename Base, typename Derived>
     inline constexpr bool is_proper_base_of_v = is_proper_base_of<Base, Derived>::value;
+
+
+    template<typename From, typename To>
+    struct is_pointer_convertible : std::disjunction<
+        std::conjunction<detail::is_proper_base_of<To, From>, std::has_virtual_destructor<To>, std::negation<detail::is_less_cv_qualified<To, From>>>,
+        std::conjunction<detail::is_same_unqualified<From, To>, std::negation<detail::is_less_cv_qualified<To, From>>>
+    > {};
+
+    template<typename From, typename To>
+    inline constexpr bool is_pointer_convertible_v = is_pointer_convertible<From, To>::value;
 
 
     inline constexpr std::size_t default_small_ptr_size = 64;
@@ -298,7 +329,7 @@ namespace smp
         template<typename U>
         constexpr small_unique_ptr(small_unique_ptr<U, Size>&& other, constructor_tag_t) noexcept
         {
-            static_assert(!detail::is_proper_base_of_v<T, U> || std::has_virtual_destructor_v<T>);
+            static_assert(detail::is_pointer_convertible_v<U, T>);
 
             if (!other.is_stack_allocated())
             {
@@ -323,7 +354,7 @@ namespace smp
         template<typename U>
         constexpr small_unique_ptr& operator=(small_unique_ptr<U, Size>&& other) noexcept
         {
-            static_assert(!detail::is_proper_base_of_v<T, U> || std::has_virtual_destructor_v<T>);
+            static_assert(detail::is_pointer_convertible_v<U, T>);
 
             if (!other.is_stack_allocated())
             {
@@ -535,11 +566,11 @@ namespace smp::detail
 {
     struct make_unique_small_impl
     {
-        template<typename T, std::size_t S, typename... Args>
-        static constexpr small_unique_ptr<T, S> invoke_scalar(Args&&... args)
+        template<typename T, typename B, std::size_t S, typename... Args>
+        static constexpr small_unique_ptr<B, S> invoke_scalar(Args&&... args)
         noexcept(std::is_nothrow_constructible_v<T, Args...> && !detail::is_always_heap_allocated_v<T, S>)
         {
-            small_unique_ptr<T, S> ptr;
+            small_unique_ptr<B, S> ptr;
 
             if (detail::is_always_heap_allocated_v<T, S> || std::is_constant_evaluated())
             {
@@ -547,12 +578,12 @@ namespace smp::detail
             }
             else if constexpr (!detail::is_always_heap_allocated_v<T, S> && std::is_polymorphic_v<T> && !detail::has_virtual_move<T>)
             {
-                ptr.data_ = std::construct_at(ptr.buffer(), std::forward<Args>(args)...);
+                ptr.data_ = std::construct_at(reinterpret_cast<std::remove_cv_t<T>*>(ptr.buffer()), std::forward<Args>(args)...);
                 ptr.move_ = detail::move_buffer<std::remove_cv_t<T>>;
             }
             else if constexpr (!detail::is_always_heap_allocated_v<T, S>)
             {
-                ptr.data_ = std::construct_at(ptr.buffer(), std::forward<Args>(args)...);
+                ptr.data_ = std::construct_at(reinterpret_cast<std::remove_cv_t<T>*>(ptr.buffer()), std::forward<Args>(args)...);
             }
 
             return ptr;
@@ -576,11 +607,11 @@ namespace smp::detail
             return ptr;
         }
 
-        template<typename T, std::size_t S>
-        static constexpr small_unique_ptr<T, S> invoke_for_overwrite_scalar()
+        template<typename T, typename B, std::size_t S>
+        static constexpr small_unique_ptr<B, S> invoke_for_overwrite_scalar()
         noexcept(std::is_nothrow_default_constructible_v<T> && !detail::is_always_heap_allocated_v<T, S>)
         {
-            small_unique_ptr<T, S> ptr;
+            small_unique_ptr<B, S> ptr;
 
             if (detail::is_always_heap_allocated_v<T, S> || std::is_constant_evaluated())
             {
@@ -622,11 +653,12 @@ namespace smp::detail
 
 namespace smp
 {
-    template<typename T, std::size_t Size = detail::default_small_ptr_size, typename... Args>
-    [[nodiscard]] constexpr small_unique_ptr<T, Size> make_unique_small(Args&&... args)
-    noexcept(std::is_nothrow_constructible_v<T, Args...> && !detail::is_always_heap_allocated_v<T, Size>) requires(!std::is_array_v<T>)
+    template<typename T, typename Base = T, std::size_t Size = detail::default_small_ptr_size, typename... Args>
+    [[nodiscard]] constexpr small_unique_ptr<Base, Size> make_unique_small(Args&&... args)
+    noexcept(std::is_nothrow_constructible_v<T, Args...> && !detail::is_always_heap_allocated_v<T, Size>)
+    requires(!std::is_array_v<T> && detail::is_pointer_convertible_v<T, Base>)
     {
-        return detail::make_unique_small_impl::invoke_scalar<T, Size>(std::forward<Args>(args)...);
+        return detail::make_unique_small_impl::invoke_scalar<T, Base, Size>(std::forward<Args>(args)...);
     }
 
     template<typename T, std::size_t Size = detail::default_small_ptr_size>
@@ -639,11 +671,12 @@ namespace smp
     [[nodiscard]] constexpr small_unique_ptr<T, Size> make_unique_small(Args&&...) requires(std::is_bounded_array_v<T>) = delete;
 
 
-    template<typename T, std::size_t Size = detail::default_small_ptr_size>
-    [[nodiscard]] constexpr small_unique_ptr<T, Size> make_unique_small_for_overwrite()
-    noexcept(std::is_nothrow_default_constructible_v<T> && !detail::is_always_heap_allocated_v<T, Size>) requires(!std::is_array_v<T>)
+    template<typename T, typename Base = T, std::size_t Size = detail::default_small_ptr_size>
+    [[nodiscard]] constexpr small_unique_ptr<Base, Size> make_unique_small_for_overwrite()
+    noexcept(std::is_nothrow_default_constructible_v<T> && !detail::is_always_heap_allocated_v<T, Size>)
+    requires(!std::is_array_v<T> && detail::is_pointer_convertible_v<T, Base>)
     {
-        return detail::make_unique_small_impl::invoke_for_overwrite_scalar<T, Size>();
+        return detail::make_unique_small_impl::invoke_for_overwrite_scalar<T, Base, Size>();
     }
 
     template<typename T, std::size_t Size = detail::default_small_ptr_size>
