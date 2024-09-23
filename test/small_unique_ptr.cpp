@@ -74,6 +74,56 @@ using SmallIntrusive = DerivedIntrusive<32>;
 using LargeIntrusive = DerivedIntrusive<64>;
 
 
+TEST_CASE("cv_qual_rank", "[small_unique_ptr]")
+{
+    STATIC_REQUIRE(detail::cv_qual_rank_v<void> == 0);
+
+    STATIC_REQUIRE(detail::cv_qual_rank_v<int> == 0);
+    STATIC_REQUIRE(detail::cv_qual_rank_v<const int> == 1);
+    STATIC_REQUIRE(detail::cv_qual_rank_v<volatile int> == 1);
+    STATIC_REQUIRE(detail::cv_qual_rank_v<const volatile int> == 2);
+
+    STATIC_REQUIRE(detail::cv_qual_rank_v<const int*> == 0);
+    STATIC_REQUIRE(detail::cv_qual_rank_v<int* const> == 1);
+}
+
+TEST_CASE("is_less_cv_qualified", "[small_unique_ptr]")
+{
+    STATIC_REQUIRE(detail::is_less_cv_qualified_v<int, const int>);
+    STATIC_REQUIRE(detail::is_less_cv_qualified_v<int, volatile int>);
+    STATIC_REQUIRE(detail::is_less_cv_qualified_v<const int, const volatile int>);
+
+    STATIC_REQUIRE(!detail::is_less_cv_qualified_v<int, int>);
+    STATIC_REQUIRE(!detail::is_less_cv_qualified_v<const int, const int>);
+    STATIC_REQUIRE(!detail::is_less_cv_qualified_v<const int, volatile int>);
+}
+
+TEST_CASE("is_proper_base_of", "[small_unique_ptr]")
+{
+    STATIC_REQUIRE(detail::is_proper_base_of_v<Base, SmallDerived>);
+    STATIC_REQUIRE(detail::is_proper_base_of_v<const Base, SmallDerived>);
+
+    STATIC_REQUIRE(!detail::is_proper_base_of_v<Base, Base>);
+    STATIC_REQUIRE(!detail::is_proper_base_of_v<int, int>);
+}
+
+TEST_CASE("is_pointer_convertible", "[small_unique_ptr]")
+{
+    STATIC_REQUIRE(detail::is_pointer_convertible_v<int, int>);
+    STATIC_REQUIRE(detail::is_pointer_convertible_v<int, const int>);
+
+    STATIC_REQUIRE(detail::is_pointer_convertible_v<SmallDerived, Base>);
+    STATIC_REQUIRE(detail::is_pointer_convertible_v<SmallDerived, const Base>);
+
+    STATIC_REQUIRE(detail::is_pointer_convertible_v<Base, Base>);
+    STATIC_REQUIRE(detail::is_pointer_convertible_v<Base, const Base>);
+
+    STATIC_REQUIRE(!detail::is_pointer_convertible_v<const int, int>);
+    STATIC_REQUIRE(!detail::is_pointer_convertible_v<Base, SmallDerived>);
+    STATIC_REQUIRE(!detail::is_pointer_convertible_v<const Base, Base>);
+    STATIC_REQUIRE(!detail::is_pointer_convertible_v<int, Base>);
+}
+
 TEST_CASE("object_layout", "[small_unique_ptr]")
 {
     STATIC_REQUIRE(std::is_standard_layout_v<small_unique_ptr<SmallPOD>>);
@@ -216,6 +266,35 @@ TEMPLATE_TEST_CASE("make_unique_scalar", "[small_unique_ptr]", SmallPOD, LargePO
     (void) make_unique_small<const TestType>();
 
     SUCCEED();
+}
+
+TEST_CASE("make_unique_cast", "[small_unique_ptr]")
+{
+    STATIC_REQUIRE( std::invoke([] { auto p = make_unique_small<SmallDerived, Base>(); return p; }) );
+    STATIC_REQUIRE( std::invoke([] { auto p = make_unique_small<LargeDerived, Base>(); return p; }) );
+
+    STATIC_REQUIRE(std::invoke([] { auto p = make_unique_small<SmallIntrusive, BaseIntrusive>(); return p; }));
+    STATIC_REQUIRE(std::invoke([] { auto p = make_unique_small<LargeIntrusive, BaseIntrusive>(); return p; }));
+
+    const auto p1 = make_unique_small<SmallDerived, Base>();
+    const auto p2 = make_unique_small<LargeDerived, Base>();
+    REQUIRE(p1);
+    REQUIRE(p2);
+
+    const auto p3 = make_unique_small<SmallIntrusive, BaseIntrusive>();
+    const auto p4 = make_unique_small<LargeIntrusive, BaseIntrusive>();
+    REQUIRE(p3);
+    REQUIRE(p4);
+
+    const auto p5 = make_unique_small<SmallDerived, const Base>();
+    const auto p6 = make_unique_small<const SmallDerived, const Base>();
+    REQUIRE(p5);
+    REQUIRE(p6);
+
+    const auto p7 = make_unique_small<int, int>(1);
+    const auto p8 = make_unique_small<int, const int>(1);
+    REQUIRE(p7);
+    REQUIRE(p8);
 }
 
 TEMPLATE_TEST_CASE("make_unique_for_overwrite_scalar", "[small_unique_ptr]", SmallPOD, LargePOD, Base, SmallDerived, LargeDerived, BaseIntrusive, SmallIntrusive, LargeIntrusive)

@@ -6,6 +6,7 @@ include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/build")
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 if(NOT CMAKE_BUILD_TYPE MATCHES "^(Debug|Release|RelWithDebInfo)$")
     message(WARNING "The specified build type [${CMAKE_BUILD_TYPE}] is not recognized. Defaulting to Release.")
@@ -13,16 +14,13 @@ if(NOT CMAKE_BUILD_TYPE MATCHES "^(Debug|Release|RelWithDebInfo)$")
 endif()
 
 if(MSVC)
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -permissive- -W4 -WX -wd4324 -diagnostics:caret")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -permissive- -W4 -WX -wd4324 -diagnostics:caret -Z7")
 else()
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra -Wpedantic -Werror -pedantic-errors -g")
+    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3")
     if(CMAKE_CXX_COMPILER_ID MATCHES "GNU")
         set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-maybe-uninitialized")
     endif()
-endif()
-
-if(CMAKE_BUILD_TYPE MATCHES "(Release|RelWithDebInfo)")
-    set(CMAKE_INTERPROCEDURAL_OPTIMIZATION TRUE)
 endif()
 
 add_library(small_unique_ptr INTERFACE)
@@ -51,3 +49,4 @@ include(CTest)
 
 enable_testing()
 add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/test")
+add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/benchmark")
