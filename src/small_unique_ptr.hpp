@@ -12,7 +12,6 @@
 #include <concepts>
 #include <utility>
 #include <cstddef>
-#include <cstdint>
 #include <cassert>
 
 namespace smp::detail
@@ -25,6 +24,12 @@ namespace smp::detail
 
     template<std::integral T>
     constexpr T max_pow2_factor(T n) noexcept { return n & (~n + 1); }
+
+
+    struct ignore_t
+    {
+        constexpr const ignore_t& operator=(const auto&) const noexcept { return *this; }
+    };
 
 
     using move_fn = void(*)(void* src, void* dst) noexcept;
@@ -57,7 +62,7 @@ namespace smp::detail
     template<typename T, typename U>
     inline constexpr bool is_same_unqualified_v = is_same_unqualified<T, U>::value;
 
-    
+
     template<typename T>
     struct cv_qual_rank : std::integral_constant<std::size_t, std::is_const_v<T> + std::is_volatile_v<T>> {};
 
@@ -90,9 +95,6 @@ namespace smp::detail
 
     template<typename From, typename To>
     inline constexpr bool is_pointer_convertible_v = is_pointer_convertible<From, To>::value;
-
-
-    inline constexpr std::size_t default_small_ptr_size = 64;
 
 
     template<typename T, std::size_t small_ptr_size>
@@ -148,7 +150,7 @@ namespace smp::detail
 
         static constexpr bool value = (sizeof(U)  > buffer_size_v<T, small_ptr_size>) ||
                                       (alignof(U) > buffer_alignment_v<T, small_ptr_size>) ||
-                                      (!std::is_abstract_v<U> && !std::is_nothrow_move_constructible_v<U>);
+                                      (!std::is_nothrow_move_constructible_v<U> && !std::is_abstract_v<U>);
     };
 
     template<typename T, std::size_t small_ptr_size>
@@ -179,9 +181,9 @@ namespace smp::detail
             return static_cast<bool>(move_);
         }
 
-        alignas(buffer_alignment_v<T, Size>) mutable buffer_t buffer_ = {};
-        T* data_      = nullptr;
-        move_fn move_ = nullptr;
+        alignas(buffer_alignment_v<T, Size>) mutable buffer_t buffer_;
+        T* data_;
+        move_fn move_;
     };
 
     template<typename T, std::size_t Size>
@@ -190,7 +192,8 @@ namespace smp::detail
     {
         static constexpr bool is_stack_allocated() noexcept { return false; }
 
-        std::remove_extent_t<T>* data_ = nullptr;
+        std::remove_extent_t<T>* data_;
+        static constexpr ignore_t move_ = {};
     };
 
     template<typename T, std::size_t Size>
@@ -220,7 +223,8 @@ namespace smp::detail
         constexpr ~small_unique_ptr_base() noexcept {}
 
         union { mutable buffer_t buffer_; };
-        T* data_ = nullptr;
+        T* data_;
+        static constexpr ignore_t move_ = {};
     };
 
     template<typename T, std::size_t Size>
@@ -258,8 +262,9 @@ namespace smp::detail
             return std::less_equal{}(buffer_first, data) && std::less{}(data, buffer_last);
         }
 
-        alignas(buffer_alignment_v<T, Size>) mutable buffer_t buffer_ = {};
-        T* data_ = nullptr;
+        alignas(buffer_alignment_v<T, Size>) mutable buffer_t buffer_;
+        T* data_;
+        static constexpr ignore_t move_ = {};
     };
 
     template<typename T, std::size_t Size>
@@ -291,7 +296,8 @@ namespace smp::detail
         constexpr ~small_unique_ptr_base() noexcept {}
 
         union { mutable buffer_t buffer_; };
-        std::remove_extent_t<T>* data_ = nullptr;
+        std::remove_extent_t<T>* data_;
+        static constexpr ignore_t move_ = {};
     };
 
     struct make_unique_small_impl;
@@ -300,7 +306,9 @@ namespace smp::detail
 
 namespace smp
 {
-    template<typename T, std::size_t Size = detail::default_small_ptr_size>
+    inline constexpr std::size_t default_small_ptr_size = 64;
+
+    template<typename T, std::size_t Size = default_small_ptr_size>
     class small_unique_ptr : private detail::small_unique_ptr_base<T, Size>
     {
     public:
@@ -314,8 +322,15 @@ namespace smp
 
         struct constructor_tag_t {};
 
-        constexpr small_unique_ptr() noexcept = default;
-        constexpr small_unique_ptr(std::nullptr_t) noexcept {}
+        constexpr small_unique_ptr() noexcept
+        {
+            this->data_ = nullptr;
+            this->move_ = nullptr;
+        }
+
+        constexpr small_unique_ptr(std::nullptr_t) noexcept :
+            small_unique_ptr()
+        {}
 
         constexpr small_unique_ptr(small_unique_ptr&& other) noexcept :
             small_unique_ptr(std::move(other), constructor_tag_t{})
@@ -333,20 +348,24 @@ namespace smp
 
             if (!other.is_stack_allocated())
             {
-                this->data_ = std::exchange(other.data_, nullptr);
+                this->data_ = other.data_;
+                this->move_ = nullptr;
+                other.data_ = nullptr;
                 return;
             }
+
             if constexpr (!detail::is_always_heap_allocated_v<U, Size>) // other.is_stack_allocated()
             {
+                const ptrdiff_t base_offset = other.template offsetof_base<T>();
+                const pointer base_pointer = this->buffer(base_offset);
                 other.move_buffer_to(*this);
-                this->data_ = std::launder(this->buffer(other.template offsetof_base<T>()));
-                other.reset();
+                this->data_ = std::launder(base_pointer);
             }
         }
 
         constexpr small_unique_ptr& operator=(small_unique_ptr&& other) noexcept
         {
-            if (std::addressof(other) == this) [[unlikely]] return *this;
+            if (std::addressof(other) == this) return *this;
 
             return operator=<T>(std::move(other));
         }
@@ -361,13 +380,16 @@ namespace smp
                 reset(std::exchange(other.data_, nullptr));
                 return *this;
             }
+
             if constexpr (!detail::is_always_heap_allocated_v<U, Size>) // other.is_stack_allocated()
             {
-                reset();
+                destroy();
+                const ptrdiff_t base_offset = other.template offsetof_base<T>();
+                const pointer base_pointer = this->buffer(base_offset);
                 other.move_buffer_to(*this);
-                this->data_ = std::launder(this->buffer(other.template offsetof_base<T>()));
-                other.reset();
+                this->data_ = std::launder(base_pointer);
             }
+
             return *this;
         }
 
@@ -382,11 +404,9 @@ namespace smp
             destroy();
         }
 
-        constexpr void reset(pointer new_data = pointer{}) noexcept
+        constexpr void reset(pointer new_data = pointer()) noexcept
         {
-            destroy();
-            this->data_ = new_data;
-            if constexpr (requires { small_unique_ptr::move_; }) this->move_ = nullptr;
+            is_stack_allocated() ? reset_internal(new_data) : reset_allocated(new_data);
         }
 
         constexpr void swap(small_unique_ptr& other) noexcept
@@ -401,21 +421,33 @@ namespace smp
             }
             else if (is_stack_allocated() && other.is_stack_allocated())
             {
-                small_unique_ptr temp = std::move(other);
-                other = std::move(*this);
-                *this = std::move(temp);
+                const auto other_offset = other.template offsetof_base<>();
+
+                detail::small_unique_ptr_base<T, Size> temp;
+                if constexpr (detail::has_virtual_move<T>) temp.data_ = std::launder(temp.buffer(other_offset));
+                other.move_buffer_to(temp);
+
+                other.destroy_buffer();
+                other.data_ = std::launder(other.buffer(this->template offsetof_base<>()));
+                this->move_buffer_to(other);
+
+                this->destroy_buffer();
+                temp.move_buffer_to(*this);
+                this->data_ = std::launder(this->buffer(other_offset));
             }
-            else if (!is_stack_allocated() && other.is_stack_allocated())
+            else if (!is_stack_allocated()/* && other.is_stack_allocated() */)
             {
                 const pointer new_data = this->buffer(other.offsetof_base());
                 other.move_buffer_to(*this);
-                other.reset(std::exchange(this->data_, std::launder(new_data)));
+                other.reset_internal(this->data_);
+                this->data_ = std::launder(new_data);
             }
             else /* if (is_stack_allocated() && !other.is_stack_allocated()) */
             {
                 const pointer new_data = other.buffer(this->offsetof_base());
                 this->move_buffer_to(other);
-                this->reset(std::exchange(other.data_, std::launder(new_data)));
+                this->reset_internal(other.data_);
+                other.data_ = std::launder(new_data);
             }
         }
 
@@ -517,7 +549,7 @@ namespace smp
         template<typename Base = T>
         constexpr std::ptrdiff_t offsetof_base() const noexcept requires(std::is_polymorphic_v<T>)
         {
-            if (!is_stack_allocated()) return 0;
+            assert(is_stack_allocated());
 
             const auto derived_ptr = reinterpret_cast<const volatile unsigned char*>(this->buffer());
             const auto base_ptr    = reinterpret_cast<const volatile unsigned char*>(static_cast<const volatile Base*>(this->data_));
@@ -531,14 +563,50 @@ namespace smp
             return 0;
         }
 
-        constexpr void destroy() noexcept requires(!std::is_array_v<T>)
+        constexpr void destroy_buffer() noexcept requires(!std::is_array_v<T>)
         {
-            is_stack_allocated() ? std::destroy_at(this->data_) : delete this->data_;
+            assert(is_stack_allocated());
+            std::destroy_at(this->data_);
         }
 
-        constexpr void destroy() noexcept requires(std::is_array_v<T>)
+        constexpr void destroy_buffer() noexcept requires(std::is_array_v<T>)
         {
-            is_stack_allocated() ? std::destroy(this->data_, this->data_ + stack_array_size()) : delete[] this->data_;
+            assert(is_stack_allocated());
+            std::destroy(this->data_, this->data_ + stack_array_size());
+        }
+
+        constexpr void destroy_allocated() noexcept requires(!std::is_array_v<T>)
+        {
+            assert(!is_stack_allocated());
+            delete this->data_;
+        }
+
+        constexpr void destroy_allocated() noexcept requires(std::is_array_v<T>)
+        {
+            assert(!is_stack_allocated());
+            delete[] this->data_;
+        }
+
+        constexpr void destroy() noexcept
+        {
+            is_stack_allocated() ? destroy_buffer() : destroy_allocated();
+        }
+
+        constexpr void reset_internal(pointer new_data = pointer()) noexcept
+        {
+            assert(is_stack_allocated());
+
+            destroy_buffer();
+            this->data_ = new_data;
+            this->move_ = nullptr;
+        }
+
+        constexpr void reset_allocated(pointer new_data = pointer()) noexcept
+        {
+            assert(!is_stack_allocated());
+
+            destroy_allocated();
+            this->data_ = new_data;
         }
 
         template<typename U, std::size_t>
@@ -653,7 +721,15 @@ namespace smp::detail
 
 namespace smp
 {
-    template<typename T, typename Base = T, std::size_t Size = detail::default_small_ptr_size, typename... Args>
+    template<typename T, std::size_t Size = default_small_ptr_size, typename... Args>
+    [[nodiscard]] constexpr small_unique_ptr<T, Size> make_unique_small(Args&&... args)
+    noexcept(std::is_nothrow_constructible_v<T, Args...> && !detail::is_always_heap_allocated_v<T, Size>)
+    requires(!std::is_array_v<T>)
+    {
+        return detail::make_unique_small_impl::invoke_scalar<T, T, Size>(std::forward<Args>(args)...);
+    }
+
+    template<typename T, typename Base, std::size_t Size = default_small_ptr_size, typename... Args>
     [[nodiscard]] constexpr small_unique_ptr<Base, Size> make_unique_small(Args&&... args)
     noexcept(std::is_nothrow_constructible_v<T, Args...> && !detail::is_always_heap_allocated_v<T, Size>)
     requires(!std::is_array_v<T> && detail::is_pointer_convertible_v<T, Base>)
@@ -661,17 +737,25 @@ namespace smp
         return detail::make_unique_small_impl::invoke_scalar<T, Base, Size>(std::forward<Args>(args)...);
     }
 
-    template<typename T, std::size_t Size = detail::default_small_ptr_size>
+    template<typename T, std::size_t Size = default_small_ptr_size>
     [[nodiscard]] constexpr small_unique_ptr<T, Size> make_unique_small(std::size_t count) requires(std::is_unbounded_array_v<T>)
     {
         return detail::make_unique_small_impl::invoke_array<T, Size>(count);
     }
 
-    template<typename T, std::size_t Size = detail::default_small_ptr_size, typename... Args>
+    template<typename T, std::size_t Size = default_small_ptr_size, typename... Args>
     [[nodiscard]] constexpr small_unique_ptr<T, Size> make_unique_small(Args&&...) requires(std::is_bounded_array_v<T>) = delete;
 
 
-    template<typename T, typename Base = T, std::size_t Size = detail::default_small_ptr_size>
+    template<typename T, std::size_t Size = default_small_ptr_size>
+    [[nodiscard]] constexpr small_unique_ptr<T, Size> make_unique_small_for_overwrite()
+    noexcept(std::is_nothrow_default_constructible_v<T> && !detail::is_always_heap_allocated_v<T, Size>)
+    requires(!std::is_array_v<T>)
+    {
+        return detail::make_unique_small_impl::invoke_for_overwrite_scalar<T, T, Size>();
+    }
+
+    template<typename T, typename Base, std::size_t Size = default_small_ptr_size>
     [[nodiscard]] constexpr small_unique_ptr<Base, Size> make_unique_small_for_overwrite()
     noexcept(std::is_nothrow_default_constructible_v<T> && !detail::is_always_heap_allocated_v<T, Size>)
     requires(!std::is_array_v<T> && detail::is_pointer_convertible_v<T, Base>)
@@ -679,13 +763,13 @@ namespace smp
         return detail::make_unique_small_impl::invoke_for_overwrite_scalar<T, Base, Size>();
     }
 
-    template<typename T, std::size_t Size = detail::default_small_ptr_size>
+    template<typename T, std::size_t Size = default_small_ptr_size>
     [[nodiscard]] constexpr small_unique_ptr<T, Size> make_unique_small_for_overwrite(std::size_t count) requires(std::is_unbounded_array_v<T>)
     {
         return detail::make_unique_small_impl::invoke_for_overwrite_array<T, Size>(count);
     }
 
-    template<typename T, std::size_t Size = detail::default_small_ptr_size, typename... Args>
+    template<typename T, std::size_t Size = default_small_ptr_size, typename... Args>
     [[nodiscard]] constexpr small_unique_ptr<T, Size> make_unique_small_for_overwrite(Args&&...) requires(std::is_bounded_array_v<T>) = delete;
 
 } // namespace smp

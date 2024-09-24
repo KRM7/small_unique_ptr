@@ -5,6 +5,7 @@
 #include <small_unique_ptr.hpp>
 #include <functional>
 #include <bit>
+#include <type_traits>
 #include <utility>
 #include <cstdint>
 
@@ -105,6 +106,7 @@ TEST_CASE("is_proper_base_of", "[small_unique_ptr]")
 
     STATIC_REQUIRE(!detail::is_proper_base_of_v<Base, Base>);
     STATIC_REQUIRE(!detail::is_proper_base_of_v<int, int>);
+    STATIC_REQUIRE(!detail::is_proper_base_of_v<void, int>);
 }
 
 TEST_CASE("is_pointer_convertible", "[small_unique_ptr]")
@@ -112,13 +114,15 @@ TEST_CASE("is_pointer_convertible", "[small_unique_ptr]")
     STATIC_REQUIRE(detail::is_pointer_convertible_v<int, int>);
     STATIC_REQUIRE(detail::is_pointer_convertible_v<int, const int>);
 
+    STATIC_REQUIRE(!detail::is_pointer_convertible_v<const int, int>);
+    STATIC_REQUIRE(!detail::is_pointer_convertible_v<int, void>);
+
     STATIC_REQUIRE(detail::is_pointer_convertible_v<SmallDerived, Base>);
     STATIC_REQUIRE(detail::is_pointer_convertible_v<SmallDerived, const Base>);
 
     STATIC_REQUIRE(detail::is_pointer_convertible_v<Base, Base>);
     STATIC_REQUIRE(detail::is_pointer_convertible_v<Base, const Base>);
 
-    STATIC_REQUIRE(!detail::is_pointer_convertible_v<const int, int>);
     STATIC_REQUIRE(!detail::is_pointer_convertible_v<Base, SmallDerived>);
     STATIC_REQUIRE(!detail::is_pointer_convertible_v<const Base, Base>);
     STATIC_REQUIRE(!detail::is_pointer_convertible_v<int, Base>);
@@ -126,6 +130,7 @@ TEST_CASE("is_pointer_convertible", "[small_unique_ptr]")
 
 TEST_CASE("object_layout", "[small_unique_ptr]")
 {
+    STATIC_REQUIRE(std::is_standard_layout_v<small_unique_ptr<int>>);
     STATIC_REQUIRE(std::is_standard_layout_v<small_unique_ptr<SmallPOD>>);
     STATIC_REQUIRE(std::is_standard_layout_v<small_unique_ptr<LargePOD>>);
 
@@ -150,24 +155,24 @@ TEST_CASE("object_size_default", "[small_unique_ptr]")
     STATIC_REQUIRE(alignof(small_unique_ptr<LargePOD>) == alignof(void*));
 
 
-    STATIC_REQUIRE(sizeof(small_unique_ptr<SmallPOD[]>) == detail::default_small_ptr_size);
+    STATIC_REQUIRE(sizeof(small_unique_ptr<SmallPOD[]>) == default_small_ptr_size);
     STATIC_REQUIRE(sizeof(small_unique_ptr<LargePOD[]>) == sizeof(void*));
 
     STATIC_REQUIRE(alignof(small_unique_ptr<SmallPOD[]>) == alignof(void*));
     STATIC_REQUIRE(alignof(small_unique_ptr<LargePOD[]>) == alignof(void*));
 
 
-    STATIC_REQUIRE(sizeof(small_unique_ptr<SmallDerived>) == detail::default_small_ptr_size);
+    STATIC_REQUIRE(sizeof(small_unique_ptr<SmallDerived>) == default_small_ptr_size);
     STATIC_REQUIRE(sizeof(small_unique_ptr<LargeDerived>) == sizeof(void*));
 
-    STATIC_REQUIRE(alignof(small_unique_ptr<SmallDerived>) == detail::default_small_ptr_size);
+    STATIC_REQUIRE(alignof(small_unique_ptr<SmallDerived>) == default_small_ptr_size);
     STATIC_REQUIRE(alignof(small_unique_ptr<LargeDerived>) == alignof(void*));
 
 
-    STATIC_REQUIRE(sizeof(small_unique_ptr<SmallIntrusive>) == detail::default_small_ptr_size);
+    STATIC_REQUIRE(sizeof(small_unique_ptr<SmallIntrusive>) == default_small_ptr_size);
     STATIC_REQUIRE(sizeof(small_unique_ptr<LargeIntrusive>) == sizeof(void*));
 
-    STATIC_REQUIRE(alignof(small_unique_ptr<SmallIntrusive>) == detail::default_small_ptr_size);
+    STATIC_REQUIRE(alignof(small_unique_ptr<SmallIntrusive>) == default_small_ptr_size);
     STATIC_REQUIRE(alignof(small_unique_ptr<LargeIntrusive>) == alignof(void*));
 }
 
@@ -262,10 +267,10 @@ TEMPLATE_TEST_CASE("make_unique_scalar", "[small_unique_ptr]", SmallPOD, LargePO
     STATIC_REQUIRE( std::invoke([]{ (void) make_unique_small<TestType>();       return true; }) );
     STATIC_REQUIRE( std::invoke([]{ (void) make_unique_small<const TestType>(); return true; }) );
 
-    (void) make_unique_small<TestType>();
-    (void) make_unique_small<const TestType>();
-
-    SUCCEED();
+    const auto p1 = make_unique_small<TestType>();
+    const auto p2 = make_unique_small<const TestType>();
+    REQUIRE(p1);
+    REQUIRE(p2);
 }
 
 TEST_CASE("make_unique_cast", "[small_unique_ptr]")
@@ -301,9 +306,8 @@ TEMPLATE_TEST_CASE("make_unique_for_overwrite_scalar", "[small_unique_ptr]", Sma
 {
     STATIC_REQUIRE( std::invoke([]{ (void) make_unique_small_for_overwrite<TestType>(); return true; }) );
 
-    (void) make_unique_small_for_overwrite<TestType>();
-
-    SUCCEED();
+    const auto p1 = make_unique_small_for_overwrite<TestType>();
+    REQUIRE(p1);
 }
 
 TEMPLATE_TEST_CASE("construction_array", "[small_unique_ptr]", SmallPOD, LargePOD)
@@ -474,7 +478,6 @@ TEST_CASE("move_construct_plain", "[small_unique_ptr]")
 
     small_unique_ptr<const Base> cbase = std::move(base1);
     REQUIRE(cbase->value() == 32);
-    REQUIRE(base1 == nullptr);
 
 
     small_unique_ptr<BaseIntrusive> ibase1 = make_unique_small<SmallIntrusive>();
@@ -484,7 +487,6 @@ TEST_CASE("move_construct_plain", "[small_unique_ptr]")
 
     small_unique_ptr<const BaseIntrusive> icbase = std::move(ibase1);
     REQUIRE(icbase->value() == 32);
-    REQUIRE(ibase1 == nullptr);
 
     small_unique_ptr<const volatile SmallPOD> cpod1 = make_unique_small<SmallPOD>();
     small_unique_ptr<const volatile LargePOD> cpod2 = make_unique_small<LargePOD>();
@@ -527,6 +529,10 @@ TEST_CASE("move_assignment_plain", "[small_unique_ptr]")
     base = nullptr;
     REQUIRE(!base);
 
+    base.reset(new SmallDerived(1));
+    base = make_unique_small<SmallDerived>(2);
+    REQUIRE(base->value() == 2);
+
 
     small_unique_ptr<const BaseIntrusive> ibase;
 
@@ -538,6 +544,10 @@ TEST_CASE("move_assignment_plain", "[small_unique_ptr]")
 
     ibase = nullptr;
     REQUIRE(!ibase);
+
+    ibase.reset(new SmallIntrusive(1));
+    ibase = make_unique_small<SmallIntrusive>(2);
+    REQUIRE(ibase->value() == 2);
 
 
     small_unique_ptr<const volatile SmallPOD> cpod1; cpod1 = make_unique_small<SmallPOD>();
@@ -600,6 +610,9 @@ TEST_CASE("swap_small", "[small_unique_ptr]")
 {
     small_unique_ptr<Base> p1 = make_unique_small<SmallDerived>(1);
     small_unique_ptr<Base> p2 = make_unique_small<SmallDerived>(2);
+
+    REQUIRE(p1->value() == 1);
+    REQUIRE(p2->value() == 2);
 
     using std::swap;
     swap(p1, p2);
@@ -881,7 +894,6 @@ TEST_CASE("abstract_base", "[small_unique_ptr]")
 
     small_unique_ptr<const ABase> pc = std::move(p);
     REQUIRE(pc->value() == 12);
-    REQUIRE(p == nullptr);
 }
 
 TEST_CASE("alignment_simple", "[small_unique_ptr]")
@@ -918,4 +930,17 @@ TEST_CASE("const_unique_ptr", "[small_unique_ptr]")
     *p = 2;
 
     REQUIRE(*p == 2);
+}
+
+TEST_CASE("immovable_object", "[small_unique_ptr]")
+{
+    struct IMBase { virtual int value() const = 0; virtual ~IMBase() = default; };
+    struct IMDerived : IMBase { int value() const override { return 7; } IMDerived() = default; IMDerived(IMDerived&&) = delete; };
+
+    small_unique_ptr<IMBase> p1;
+    small_unique_ptr<IMBase> p2 = make_unique_small<IMDerived>();
+    REQUIRE(p2->value() == 7);
+
+    p1 = std::move(p2);
+    REQUIRE(p1->value() == 7);
 }

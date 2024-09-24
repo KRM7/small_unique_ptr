@@ -5,6 +5,8 @@ project(small_unique_ptr VERSION 0.1 LANGUAGES CXX)
 include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
 
+option(SMP_BUILD_BENCHMARKS "Build the benchmarks for the library when ON." ON)
+
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/build")
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
@@ -19,7 +21,7 @@ else()
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra -Wpedantic -Werror -pedantic-errors -g")
     set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3")
     if(CMAKE_CXX_COMPILER_ID MATCHES "GNU")
-        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-maybe-uninitialized")
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-maybe-uninitialized -Wno-free-nonheap-object")
     endif()
 endif()
 
@@ -47,6 +49,11 @@ install(FILES "${CMAKE_CURRENT_BINARY_DIR}/smp-config-version.cmake"
 
 include(CTest)
 
-enable_testing()
-add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/test")
-add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/benchmark")
+if(BUILD_TESTING)
+    enable_testing()
+    add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/test")
+endif()
+
+if (SMP_BUILD_BENCHMARKS)
+    add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/benchmark")
+endif()
