@@ -25,7 +25,7 @@ jobs:
     env:
       ASAN_OPTIONS: check_initialization_order=1:strict_init_order=1:detect_stack_use_after_return=1:detect_leaks=1:detect_invalid_pointer_pairs=2
       UBSAN_OPTIONS: print_stacktrace=1:print_summary=1
-      
+
     defaults:
       run:
         working-directory: ${{ github.workspace }}/build
@@ -41,13 +41,15 @@ jobs:
       run: apt update && apt install --allow-downgrades -y git cmake ${{ matrix.compiler.pkgs }}
 
     - name: setup-catch
-      run: bash ./install_catch.sh -DCMAKE_CXX_COMPILER=${{ matrix.compiler.cxx }}
+      env:
+        CXX: ${{ matrix.compiler.cxx }}
+      run: bash ../tools/install_catch.sh Release
 
     - name: setup-build
-      run: cmake .. -DCMAKE_CXX_COMPILER=${{ matrix.compiler.cxx }} -DCMAKE_CXX_FLAGS="-fsanitize=${{ matrix.sanitizer }} -g -fno-omit-frame-pointer"
+      run: cmake .. -DCMAKE_CXX_COMPILER=${{ matrix.compiler.cxx }} -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_FLAGS="-fsanitize=${{ matrix.sanitizer }} -g -fno-omit-frame-pointer" -DSMP_BUILD_BENCHMARKS=OFF
 
     - name: build
       run: cmake --build .
-    
+
     - name: run-tests
       run: ctest --output-on-failure --schedule-random
