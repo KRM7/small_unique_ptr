@@ -16,6 +16,7 @@ jobs:
             { cxx: clang++-16, pkgs: clang-16 },
             { cxx: clang++-17, pkgs: clang-17 },
             { cxx: clang++-18, pkgs: clang-18 },
+            { cxx: clang++-19, pkgs: clang-19 },
             { cxx: g++-11, pkgs: g++-11 },
             { cxx: g++-12, pkgs: g++-12 },
             { cxx: g++-13, pkgs: g++-13 },

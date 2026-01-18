@@ -6,6 +6,7 @@ include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
 
 option(SMP_BUILD_BENCHMARKS "Build the benchmarks for the library when ON." ON)
+option(SMP_BUILD_EXAMPLES "Build the examples for the library when ON." ON)
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/build")
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -54,6 +55,10 @@ if(BUILD_TESTING)
     add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/test")
 endif()
 
-if (SMP_BUILD_BENCHMARKS)
+if(SMP_BUILD_BENCHMARKS)
     add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/benchmark")
+endif()
+
+if(SMP_BUILD_EXAMPLES)
+    add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/example")
 endif()
