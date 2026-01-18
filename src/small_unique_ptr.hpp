@@ -42,7 +42,7 @@ namespace smp::detail
     }
 
     template<typename T>
-    concept has_virtual_move = requires(std::remove_cv_t<T> object, void* const dst)
+    concept has_virtual_move = requires(std::remove_cv_t<T>& object, void* const dst)
     {
         requires std::is_polymorphic_v<T>;
         { object.small_unique_ptr_move(dst) } noexcept -> std::same_as<void>;
