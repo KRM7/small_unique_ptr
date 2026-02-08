@@ -25,6 +25,12 @@ namespace smp::detail
     template<std::integral T>
     constexpr T max_pow2_factor(T n) noexcept { return n & (~n + 1); }
 
+    template<typename T, typename U, std::size_t N>
+    constexpr const void fill(T(&arr)[N], U value)
+    {
+        for (std::size_t i = 0; i < N; i++) 
+            arr[i] = value;
+    }
 
     struct ignore_t
     {
@@ -163,6 +169,14 @@ namespace smp::detail
         using pointer  = std::remove_cv_t<T>*;
         using buffer_t = unsigned char[buffer_size_v<T, Size>];
 
+        constexpr small_unique_ptr_base() noexcept
+        {
+            if (std::is_constant_evaluated())
+            {
+                detail::fill(buffer_, 0);
+            }
+        }
+
         pointer buffer(std::ptrdiff_t offset = 0) const noexcept
         {
             assert(offset <= sizeof(buffer_t));
@@ -233,6 +247,14 @@ namespace smp::detail
     {
         using pointer  = std::remove_cv_t<T>*;
         using buffer_t = unsigned char[buffer_size_v<T, Size>];
+
+        constexpr small_unique_ptr_base() noexcept
+        {
+            if (std::is_constant_evaluated())
+            {
+                detail::fill(buffer_, 0);
+            }
+        }
 
         pointer buffer(std::ptrdiff_t offset = 0) const noexcept
         {

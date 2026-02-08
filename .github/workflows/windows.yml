@@ -1,0 +1,46 @@
+name: windows
+
+on: push
+
+jobs:
+  build:
+    runs-on: windows-2022
+    strategy:
+      fail-fast: false
+      matrix:
+        build-type: [ Release, Debug ]
+        compiler: [
+            { name: msvc, toolset: v143 }, 
+            { name: clang, toolset: ClangCL }
+        ]
+
+    defaults:
+      run:
+        working-directory: ${{ github.workspace }}/build
+
+    name: ${{ matrix.compiler.name }}-${{ matrix.build-type }}
+
+
+    steps:
+    - name: checkout-repo
+      uses: actions/checkout@v4
+
+    - name: setup-catch
+      env:
+        CMAKE_GENERATOR: "Visual Studio 17 2022"
+        CMAKE_GENERATOR_TOOLSET: ${{ matrix.compiler.toolset }}
+        CMAKE_GENERATOR_PLATFORM: ${{ matrix.platform }}
+      run: bash ../tools/install_catch.sh ${{ matrix.build-type }}
+
+    - name: setup-build
+      env:
+        CMAKE_GENERATOR: "Visual Studio 17 2022"
+        CMAKE_GENERATOR_TOOLSET: ${{ matrix.compiler.toolset }}
+        CMAKE_GENERATOR_PLATFORM: ${{ matrix.platform }}
+      run: cmake .. -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -DSMP_BUILD_BENCHMARKS=OFF
+
+    - name: build
+      run: cmake --build . --parallel --config ${{ matrix.build-type }}
+    
+    - name: run-tests
+      run: ctest --output-on-failure --schedule-random
